@@ -744,7 +744,7 @@ qc_regional_data <- function(region_data,
             final_LD <- c(final_LD, list(LD_mat) %>% setNames(conditions_sumstat))
             LD_match <- c(LD_match, conditions_sumstat)
           } else {
-            LD_match <- c(LD_match, LD_match[pos[1]])
+            LD_match <- c(LD_match, names(final_LD)[pos[1]])
           }
         }
       }
