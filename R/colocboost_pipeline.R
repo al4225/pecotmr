@@ -172,6 +172,7 @@ load_multitask_regional_data <- function(region, # a string of chr:start-end for
           region = association_window, extract_region_name = extract_sumstats_region_name,
           region_name_col = sumstats_region_name_col, comment_string = comment_string
         )
+        if (nrow(tmp$sumstats) == 0){ return(NULL) }
         if (!("variant_id" %in% colnames(tmp$sumstats))) {
           tmp$sumstats <- tmp$sumstats %>%
             rowwise() %>%
@@ -180,6 +181,11 @@ load_multitask_regional_data <- function(region, # a string of chr:start-end for
         return(tmp)
       })
       names(sumstats) <- conditions
+      if_no_variants <- sapply(sumstats, is.null)
+      if (sum(if_no_variants)!=0){
+        pos_no_variants <- which(if_no_variants)
+        sumstats <- sumstats[-pos_no_variants]
+      }
       sumstat_data$sumstats <- c(sumstat_data$sumstats, list(sumstats))
       sumstat_data$LD_info <- c(sumstat_data$LD_info, list(LD_info))
     }
