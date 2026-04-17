@@ -126,7 +126,8 @@ load_plink2_data <- function(prefix, region = NULL, keep_indel = TRUE, keep_vari
   # --- Attach allele frequency and rescale stochastic genotypes ---
   afreq <- read_afreq(prefix)
   if (!is.null(afreq)) {
-    variant_info <- merge(variant_info, afreq[, c("id", "alt_freq", "obs_ct")],
+    afreq_cols <- intersect(c("id", "alt_freq", "obs_ct", "u_min", "u_max"), colnames(afreq))
+    variant_info <- merge(variant_info, afreq[, afreq_cols, drop = FALSE],
                           by = "id", all.x = TRUE, sort = FALSE)
   }
   # Detect stochastic genotype (non-integer dosage, e.g., from rss_ld_sketch).
@@ -1591,4 +1592,3 @@ get_filter_lbf_index <- function(susie_obj, coverage = 0.5, size_factor = 0.5) {
   # Return filtered lbf_variable rows (one per CS)
   return(cs_index)
 }
-
