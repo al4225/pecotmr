@@ -312,8 +312,8 @@ test_that("pval_global with ACAT method returns valid combined p-value", {
   pvals <- c(0.01, 0.05, 0.5, 0.8)
   result <- pecotmr:::pval_global(pvals, comb_method = "ACAT", naive = FALSE)
   expect_true(is.numeric(result))
-  # ACAT = pcauchy(mean(qcauchy(pvals)), lower.tail=FALSE)
-  expected <- pcauchy(mean(qcauchy(pvals)), lower.tail = FALSE)
+  # ACAT statistic: T = mean(tan(pi*(0.5 - p_i))), p = P[Cauchy >= T]
+  expected <- pcauchy(mean(tan(pi * (0.5 - pvals))), lower.tail = FALSE)
   expect_equal(result, expected, tolerance = 1e-10)
 })
 
@@ -429,7 +429,7 @@ test_that("pval_acat with very small p-values does not return NA", {
 test_that("pval_acat with all large p-values returns large combined p-value", {
   result <- pecotmr:::pval_acat(c(0.8, 0.9, 0.95))
   expect_true(is.numeric(result))
-  expect_true(result > 0 && result < 0.5)
+  expect_true(result > 0.5 && result <= 1)
 })
 
 # =============================================================================
@@ -877,6 +877,51 @@ test_that("compute_LD sample vs population differ but are close", {
 
   expect_false(identical(R_sample, R_pop))
   expect_true(max(abs(R_sample - R_pop)) < 0.1)
+})
+
+test_that("compute_LD gcta method produces valid correlation matrix", {
+  set.seed(42)
+  X <- matrix(sample(0:2, 500, replace = TRUE), nrow = 100)
+  colnames(X) <- paste0("rs", 1:5)
+
+  R <- compute_LD(X, method = "gcta")
+  expect_equal(dim(R), c(5, 5))
+  expect_equal(unname(diag(R)), rep(1, 5), tolerance = 1e-10)
+  expect_true(isSymmetric(R, tol = 1e-10))
+  expect_true(all(abs(R) <= 1 + 1e-10))
+})
+
+test_that("compute_LD gcta method handles missing data", {
+  set.seed(42)
+  X <- matrix(sample(0:2, 500, replace = TRUE), nrow = 100)
+  colnames(X) <- paste0("rs", 1:5)
+  X[sample(length(X), 50)] <- NA
+
+  R <- compute_LD(X, method = "gcta")
+  expect_equal(dim(R), c(5, 5))
+  expect_true(all(is.finite(R)))
+})
+
+test_that("compute_LD gcta agrees with sample method on complete data", {
+  set.seed(42)
+  X <- matrix(sample(0:2, 500, replace = TRUE), nrow = 100)
+  colnames(X) <- paste0("rs", 1:5)
+
+  R_sample <- compute_LD(X, method = "sample")
+  R_gcta <- compute_LD(X, method = "gcta")
+
+  # With no missing data, GCTA and sample should be close (differ by N vs N-1 denom)
+  expect_true(max(abs(R_sample - R_gcta)) < 0.05)
+})
+
+test_that("compute_LD gcta preserves column names", {
+  set.seed(42)
+  X <- matrix(sample(0:2, 300, replace = TRUE), nrow = 100)
+  colnames(X) <- c("snp_a", "snp_b", "snp_c")
+
+  R <- compute_LD(X, method = "gcta")
+  expect_equal(colnames(R), c("snp_a", "snp_b", "snp_c"))
+  expect_equal(rownames(R), c("snp_a", "snp_b", "snp_c"))
 })
 
 # =============================================================================
