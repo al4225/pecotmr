@@ -155,7 +155,7 @@ susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
 #' @param L Initial number of causal configurations.
 #' @param max_L Maximum number of causal configurations.
 #' @param l_step Step size for increasing L when the limit is reached.
-#' @param stochastic_ld_sample Stochastic LD parameter passed to susie_rss.
+#' @param sketch_samples Sketch LD parameter passed to susie_rss.
 #'   NULL (default): no variance inflation. TRUE: infer sketch size from X
 #'   (requires X, not R). Integer: explicit sketch size (for R only).
 #' @param ... Extra parameters passed to susie_rss (e.g., var_y, coverage).
@@ -165,14 +165,14 @@ susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
 susie_rss_wrapper <- function(z, R = NULL, X = NULL, n = NULL,
                               L = 10, max_L = 30, l_step = 5,
                               coverage = 0.95,
-                              stochastic_ld_sample = NULL, ...) {
+                              sketch_samples = NULL, ...) {
   # Validate: exactly one of R or X
   if (is.null(R) && is.null(X)) stop("Either R or X must be provided.")
   if (!is.null(R) && !is.null(X)) stop("Only one of R or X should be provided, not both.")
 
   # Build argument list for susie_rss
   base_args <- list(z = z, n = n, L = L, coverage = coverage,
-                    stochastic_ld_sample = stochastic_ld_sample, ...)
+                    sketch_samples = sketch_samples, ...)
   if (!is.null(X)) base_args$X <- X else base_args$R <- R
 
   run_susie <- function(args) do.call(susie_rss, args)
@@ -216,7 +216,7 @@ susie_rss_wrapper <- function(z, R = NULL, X = NULL, n = NULL,
 #' @param secondary_coverage Secondary coverage levels (default: c(0.7, 0.5)).
 #' @param signal_cutoff PIP cutoff for susie_post_processor (default: 0.1).
 #' @param min_abs_corr Minimum absolute correlation for CS purity (default: 0.8).
-#' @param stochastic_ld_sample Passed to susie_rss. NULL, TRUE, or integer.
+#' @param sketch_samples Passed to susie_rss. NULL, TRUE, or integer.
 #' @param ... Additional parameters passed to susie_rss (e.g., var_y).
 #' @return A list with post-processed SuSiE RSS results.
 #' @importFrom magrittr %>%
@@ -229,7 +229,7 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
                                secondary_coverage = c(0.7, 0.5),
                                signal_cutoff = 0.1,
                                min_abs_corr = 0.8,
-                               stochastic_ld_sample = NULL, ...) {
+                               sketch_samples = NULL, ...) {
   analysis_method <- match.arg(analysis_method)
 
   if (!is.null(sumstats$z)) {
@@ -242,7 +242,7 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
 
   # Common args for susie_rss_wrapper
   common <- list(z = z, n = n, coverage = coverage,
-                 stochastic_ld_sample = stochastic_ld_sample, ...)
+                 sketch_samples = sketch_samples, ...)
   if (!is.null(X_mat)) common$X <- X_mat else common$R <- LD_mat
 
   if (analysis_method == "single_effect") {

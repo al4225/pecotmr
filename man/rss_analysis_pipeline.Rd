@@ -22,7 +22,7 @@ rss_analysis_pipeline(
   impute = TRUE,
   impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
   pip_cutoff_to_skip = 0,
-  stochastic_ld_sample = NULL,
+  sketch_samples = NULL,
   keep_indel = TRUE,
   comment_string = "#",
   diagnostics = FALSE
@@ -65,7 +65,7 @@ signal_cutoff, min_abs_corr).}
 
 \item{pip_cutoff_to_skip}{PIP threshold for early stopping (default 0, no skip).}
 
-\item{stochastic_ld_sample}{Passed to susie_rss. NULL (default), TRUE, or integer.}
+\item{sketch_samples}{Passed to susie_rss. NULL (default), TRUE, or integer.}
 
 \item{keep_indel}{Whether to keep indel variants (default TRUE).}
 
