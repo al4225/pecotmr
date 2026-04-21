@@ -8,7 +8,10 @@ load_genotype_region(
   genotype,
   region = NULL,
   keep_indel = TRUE,
-  keep_variants_path = NULL
+  keep_variants_path = NULL,
+  return_variant_info = FALSE,
+  stochastic_meta_path = NULL,
+  stochastic_meta_format = NULL
 )
 }
 \arguments{
@@ -19,11 +22,25 @@ load_genotype_region(
 \item{keep_indel}{Whether to keep indel SNPs.}
 
 \item{keep_variants_path}{Path to a file listing variants to keep.}
+
+\item{return_variant_info}{If TRUE, return a list with X (dosage matrix) and
+variant_info (data.frame). If FALSE (default), return only the dosage matrix.}
+
+\item{stochastic_meta_path}{Optional explicit path to a stochastic genotype
+sidecar file. If NULL (default), auto-detected via \code{find_stochastic_meta}.}
+
+\item{stochastic_meta_format}{Optional format override for the sidecar file:
+\code{"afreq"} or \code{"generic"}. If NULL (default), auto-detected from
+file extension.}
 }
 \value{
-A numeric dosage matrix (rows=samples, cols=variants).
+If return_variant_info is FALSE, a numeric dosage matrix (rows=samples,
+  cols=variants). If TRUE, a list with elements X and variant_info.
 }
 \description{
-Auto-detects PLINK2 (.pgen/.pvar[.zst]/.psam) or PLINK1 (.bed/.bim/.fam) format
-and loads genotype data accordingly. Returns a numeric dosage matrix.
+Auto-detects PLINK2 (.pgen/.pvar[.zst]/.psam), PLINK1 (.bed/.bim/.fam),
+VCF (.vcf/.vcf.gz/.bcf), or GDS (.gds) format and loads genotype data
+accordingly. If a stochastic genotype sidecar file (.afreq or
+.stochastic_meta.tsv) is found alongside the genotype file, non-integer
+dosages are automatically rescaled using the stored U_MIN/U_MAX values.
 }

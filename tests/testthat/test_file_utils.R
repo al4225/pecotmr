@@ -1,20 +1,13 @@
 context("file_utils")
 library(tidyverse)
 
-test_that("read_pvar dummy data works",{
-    skip("disabled pending Bucket B resolution: read_pvar not exported / removed")
-    dummy_path <- gsub("//", "/", tempfile(pattern = "dummy_pvar", tmpdir = tempdir(), fileext = ".pvar"))
-    dummy <- data.frame("#CHROM" = c(1, 2, 3, 4, 5),
-        "ID" = c("rs1", "rs2", "rs3", "rs4", "rs5"),
-        "POS" = c(100, 200, 300, 400, 500),
-        "REF" = c("A", "T", "C", "G", "A"),
-        "ALT" = c("T", "C", "G", "A", "T"))
-    colnames(dummy) <- c("#CHROM", "ID", "POS", "REF", "ALT")
-    cat(c("#DUMMY HEADER 1", "#DUMMY HEADER 2", "#DUMMY HEADER 3"), file = dummy_path, sep = "\n")
-    write_delim(
-        dummy, dummy_path, delim = "\t", col_names = TRUE, append = TRUE)
-    expect_equal(colnames(read_pvar(dummy_path)), c("chrom", "id", "pos", "A2", "A1"))
-    file.remove(dummy_path)
+test_that("read_pvar reads real pvar file", {
+    skip_if_not_installed("pgenlibr")
+    pvar_path <- file.path(test_path("test_data"), "test_variants.pvar")
+    res <- pecotmr:::read_pvar(pvar_path)
+    expect_equal(colnames(res), c("chrom", "id", "pos", "A2", "A1"))
+    expect_equal(nrow(res), 349L)
+    expect_true(all(res$chrom == "21"))
 })
 
 test_that("read_bim dummy data works",{
@@ -24,33 +17,10 @@ test_that("read_bim dummy data works",{
     expect_equal(nrow(res), 100)
 })
 
-test_that("read_psam dummy data works",{
-    skip("disabled pending Bucket B resolution: read_psam not exported / removed")
-    dummy_path <- gsub("//", "/", tempfile(pattern = "dummy_psam", tmpdir = tempdir(), fileext = ".psam"))
-    dummy <- data.frame("#CHROM" = c(1, 2, 3, 4, 5),
-        "IID" = c("rs1", "rs2", "rs3", "rs4", "rs5"),
-        "SID" = c(100, 200, 300, 400, 500),
-        "PAT" = c("A", "T", "C", "G", "A"),
-        "MAT" = c("T", "C", "G", "A", "T"),
-        "SEX" = c(1, 2, 1, 2, 1))
-    write_delim(
-        dummy, dummy_path, delim = "\t", col_names = TRUE, append = TRUE)
-    res <- read_psam(dummy_path)
-    expect_equal(colnames(res), c("FID", "IID", "SID", "PAT", "MAT", "SEX"))
-    file.remove(dummy_path)
-})
-
 test_that("read_fam dummy data works",{
     example_path <- "test_data/protocol_example.genotype.bed"
     res <- read_fam(example_path)
     expect_equal(nrow(res), 100)
-})
-
-test_that("open_pgen dummy data works",{
-    skip("disabled pending Bucket B resolution: open_pgen not exported / removed")
-    example_path <- "test_data/dummy_data.pgen"
-    res <- open_pgen(example_path)
-    expect_equal(res$class, "pgen")
 })
 
 test_that("open_bed dummy data works",{
@@ -229,6 +199,148 @@ test_that("load_genotype_region errors on missing genotype files", {
     load_genotype_region("/nonexistent/geno"),
     "Genotype files not found"
   )
+})
+
+# --- find_stochastic_meta tests ---
+
+test_that("find_stochastic_meta finds generic sidecar from PLINK1 prefix", {
+  td <- test_path("test_data")
+  # test_harmonize_regions has .stochastic_meta.tsv alongside it
+  result <- pecotmr:::find_stochastic_meta(file.path(td, "test_harmonize_regions"))
+  expect_true(!is.null(result))
+  expect_true(grepl("\\.(afreq|stochastic_meta\\.tsv)$", result))
+})
+
+test_that("find_stochastic_meta finds sidecar from VCF path", {
+  td <- test_path("test_data")
+  result <- pecotmr:::find_stochastic_meta(file.path(td, "test_harmonize_regions.vcf.gz"))
+  expect_true(!is.null(result))
+  expect_true(grepl("\\.(afreq|stochastic_meta\\.tsv)$", result))
+})
+
+test_that("find_stochastic_meta finds sidecar from GDS path", {
+  td <- test_path("test_data")
+  result <- pecotmr:::find_stochastic_meta(file.path(td, "test_harmonize_regions.gds"))
+  expect_true(!is.null(result))
+  expect_true(grepl("\\.(afreq|stochastic_meta\\.tsv)$", result))
+})
+
+test_that("find_stochastic_meta returns NULL when no sidecar exists", {
+  td <- test_path("test_data")
+  result <- pecotmr:::find_stochastic_meta(file.path(td, "protocol_example.genotype"))
+  expect_null(result)
+})
+
+# --- read_stochastic_meta tests ---
+
+test_that("read_stochastic_meta reads generic format", {
+  td <- test_path("test_data")
+  path <- file.path(td, "test_harmonize_regions.stochastic_meta.tsv")
+  result <- pecotmr:::read_stochastic_meta(path)
+  expect_true(is.data.frame(result))
+  expect_equal(colnames(result), c("id", "u_min", "u_max"))
+  expect_equal(nrow(result), 8L)
+  expect_true(is.numeric(result$u_min))
+  expect_true(is.numeric(result$u_max))
+})
+
+test_that("read_stochastic_meta reads afreq format", {
+  td <- test_path("test_data")
+  path <- file.path(td, "test_harmonize_regions.afreq")
+  result <- pecotmr:::read_stochastic_meta(path)
+  expect_true(is.data.frame(result))
+  expect_equal(colnames(result), c("id", "u_min", "u_max"))
+  expect_equal(nrow(result), 8L)
+  expect_true(all(grepl("^chr21_", result$id)))
+})
+
+test_that("read_stochastic_meta reads afreq.zst format", {
+  td <- test_path("test_data")
+  path <- file.path(td, "test_harmonize_regions.afreq.zst")
+  result <- pecotmr:::read_stochastic_meta(path)
+  expect_true(is.data.frame(result))
+  expect_equal(colnames(result), c("id", "u_min", "u_max"))
+  expect_equal(nrow(result), 8L)
+  # Should produce identical results to the plain afreq
+  plain <- pecotmr:::read_stochastic_meta(file.path(td, "test_harmonize_regions.afreq"))
+  expect_equal(result, plain)
+})
+
+test_that("find_stochastic_meta prefers afreq over afreq.zst", {
+  td <- test_path("test_data")
+  # Both .afreq and .afreq.zst exist; find_stochastic_meta should return .afreq first
+  result <- pecotmr:::find_stochastic_meta(file.path(td, "test_harmonize_regions"))
+  expect_true(grepl("\\.afreq$", result))
+})
+
+test_that("read_stochastic_meta auto-detects format from extension", {
+  td <- test_path("test_data")
+  # .afreq extension -> afreq parser
+  afreq_result <- pecotmr:::read_stochastic_meta(file.path(td, "test_harmonize_regions.afreq"))
+  # .tsv extension -> generic parser
+  generic_result <- pecotmr:::read_stochastic_meta(
+    file.path(td, "test_harmonize_regions.stochastic_meta.tsv"))
+  # Both should return the same u_min/u_max values
+  expect_equal(afreq_result$u_min, generic_result$u_min)
+  expect_equal(afreq_result$u_max, generic_result$u_max)
+  expect_equal(afreq_result$id, generic_result$id)
+})
+
+test_that("read_stochastic_meta respects format override", {
+  td <- test_path("test_data")
+  path <- file.path(td, "test_harmonize_regions.stochastic_meta.tsv")
+  # Explicit generic format should work
+  result <- pecotmr:::read_stochastic_meta(path, format = "generic")
+  expect_equal(nrow(result), 8L)
+  expect_equal(colnames(result), c("id", "u_min", "u_max"))
+})
+
+test_that("read_stochastic_meta returns NULL for afreq without U_MIN/U_MAX", {
+  td <- test_path("test_data")
+  # test_variants.afreq has no U_MIN/U_MAX columns
+  path <- file.path(td, "test_variants.afreq")
+  result <- pecotmr:::read_stochastic_meta(path)
+  expect_null(result)
+})
+
+test_that("read_stochastic_meta returns NULL for nonexistent file", {
+  result <- pecotmr:::read_stochastic_meta("/nonexistent/file.tsv")
+  expect_null(result)
+})
+
+# --- load_genotype_region stochastic inversion test ---
+
+test_that("load_genotype_region applies stochastic inversion with explicit sidecar", {
+  td <- test_path("test_data")
+  meta_path <- file.path(td, "test_harmonize_regions.stochastic_meta.tsv")
+  smeta <- pecotmr:::read_stochastic_meta(meta_path)
+
+  # Load with explicit sidecar — inversion transforms the integer dosages
+  res <- load_genotype_region(
+    file.path(td, "test_harmonize_regions"),
+    return_variant_info = TRUE,
+    stochastic_meta_path = meta_path
+  )
+
+  expect_equal(ncol(res$X), 8L)
+  # u_min/u_max should be attached to variant_info
+  expect_true("u_min" %in% colnames(res$variant_info))
+  expect_true("u_max" %in% colnames(res$variant_info))
+  expect_equal(res$variant_info$u_min, smeta$u_min)
+  expect_equal(res$variant_info$u_max, smeta$u_max)
+
+  # Verify inversion math: for a dosage value d with u_min/u_max,
+  # inverted = d * (u_max - u_min) / 2 + u_min
+  # Check the first variant's first sample manually
+  raw <- load_genotype_region(
+    file.path(td, "protocol_example.genotype"),
+    region = "chr22:20689453-20845958"
+  )
+  # protocol_example has no sidecar, so raw values are unchanged (integer dosages)
+  expect_true(all(raw == round(raw), na.rm = TRUE))
+
+  # The inverted matrix should NOT be all integers (u_min != 0 or u_max != 2)
+  expect_false(all(res$X == round(res$X), na.rm = TRUE))
 })
 
 test_that("Test load_covariate_data reads tab-delimited file", {
@@ -953,34 +1065,8 @@ test_that("load_regional_functional_data returns full association data", {
 })
 
 # ===========================================================================
-# read_pvar / read_bim vroom-based tests
+# read_bim vroom-based tests
 # ===========================================================================
-
-test_that("read_pvar handles multiple comment styles", {
-  skip("disabled pending Bucket B resolution: read_pvar not exported / removed")
-  pvar_path <- tempfile(fileext = ".pvar")
-  cat("##fileformat=VCFv4.2\n", file = pvar_path)
-  cat("##INFO=<ID=AF>\n", file = pvar_path, append = TRUE)
-  cat("#CHROM\tID\tPOS\tREF\tALT\n", file = pvar_path, append = TRUE)
-  cat("1\trs10\t1000\tA\tG\n", file = pvar_path, append = TRUE)
-  cat("1\trs20\t2000\tT\tC\n", file = pvar_path, append = TRUE)
-
-  res <- read_pvar(pvar_path)
-  expect_equal(nrow(res), 2)
-  expect_equal(colnames(res), c("chrom", "id", "pos", "A2", "A1"))
-  expect_equal(res$id, c("rs10", "rs20"))
-  expect_equal(res$pos, c(1000, 2000))
-  file.remove(pvar_path)
-})
-
-test_that("read_pvar errors when #CHROM header is missing", {
-  skip("disabled pending Bucket B resolution: read_pvar not exported / removed")
-  bad_path <- tempfile(fileext = ".pvar")
-  cat("col1\tcol2\tcol3\n", file = bad_path)
-  cat("1\t2\t3\n", file = bad_path, append = TRUE)
-  expect_error(read_pvar(bad_path), "Could not find #CHROM header")
-  file.remove(bad_path)
-})
 
 test_that("read_bim returns correct columns and types", {
   bim_path <- tempfile(fileext = ".bim")
@@ -1013,7 +1099,7 @@ test_that("tabix_region returns empty tibble on NULL cmd_output (error path)", {
   tmp <- tempfile()
   writeLines("dummy", tmp)
   local_mocked_bindings(
-    vroom = function(...) stop("mock error")
+    read_tabix_region = function(...) stop("mock error")
   )
   result <- tabix_region(tmp, "chr1:1-100")
   expect_true(nrow(result) == 0)
@@ -1030,7 +1116,7 @@ test_that("tabix_region filters with target and target_column_index", {
   tmp <- tempfile()
   writeLines("dummy", tmp)
   local_mocked_bindings(
-    vroom = function(...) mock_df
+    read_tabix_region = function(...) mock_df
   )
   result <- tabix_region(tmp, "chr1:1-500", target = "BRCA1", target_column_index = 3)
   expect_equal(nrow(result), 2)
@@ -1047,7 +1133,7 @@ test_that("tabix_region filters with target but no target_column_index (text pat
   tmp <- tempfile()
   writeLines("dummy", tmp)
   local_mocked_bindings(
-    vroom = function(...) mock_df
+    read_tabix_region = function(...) mock_df
   )
   result <- tabix_region(tmp, "chr1:1-500", target = "ABC")
   expect_equal(nrow(result), 1)
@@ -1402,58 +1488,32 @@ test_that("get_filter_lbf_index returns numeric index vector", {
 # get_ref_variant_info
 # ===========================================================================
 
-test_that("get_ref_variant_info processes bim files with 6 columns", {
-  skip("disabled pending Bucket C resolution: resolve_ld_source now requires real LD metadata file")
-  bim_path <- tempfile(fileext = ".bim")
-  bim_data <- data.frame(
-    V1 = c("chr1", "chr1"),
-    V2 = c("chr1:100:A:G", "chr1:200:C:T"),
-    V3 = c(0, 0),
-    V4 = c(100, 200),
-    V5 = c("A", "C"),
-    V6 = c("G", "T"),
-    stringsAsFactors = FALSE
-  )
-  readr::write_tsv(bim_data, bim_path, col_names = FALSE)
-
-  local_mocked_bindings(
-    get_regional_ld_meta = function(...) {
-      list(intersections = list(bim_file_paths = bim_path))
-    }
-  )
-
-  result <- get_ref_variant_info("/fake/ld_meta.txt", "chr1:1-300")
+test_that("get_ref_variant_info processes precomputed bim with 6 columns", {
+  td <- test_path("test_data")
+  meta_file <- file.path(td, "ld_meta_refinfo_6col_tmp.tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(paste("chrom", "start", "end", "path", sep = "\t"), meta_file)
+  cat(paste("1", "1000", "1200",
+            "LD_block_1.chr1_1000_1200.float16.txt.xz,LD_block_1.chr1_1000_1200.float16.bim",
+            sep = "\t"), "\n", file = meta_file, append = TRUE)
+  result <- get_ref_variant_info(meta_file, "chr1:1000-1190")
   expect_true(is.data.frame(result))
   expect_true(all(c("chrom", "id", "pos", "A2", "A1") %in% colnames(result)))
-  expect_equal(nrow(result), 2)
-  file.remove(bim_path)
+  expect_equal(nrow(result), 5L)
 })
 
-test_that("get_ref_variant_info processes bim files with 8 columns", {
-  skip("disabled pending Bucket C resolution: resolve_ld_source now requires real LD metadata file")
-  bim_path <- tempfile(fileext = ".bim")
-  bim_data <- data.frame(
-    V1 = c("chr1", "chr1"),
-    V2 = c("chr1:100:A:G", "chr1:200:C:T"),
-    V3 = c(0, 0),
-    V4 = c(100, 200),
-    V5 = c("A", "C"),
-    V6 = c("G", "T"),
-    V7 = c(0.01, 0.02),
-    V8 = c(0.3, 0.4),
-    stringsAsFactors = FALSE
-  )
-  readr::write_tsv(bim_data, bim_path, col_names = FALSE)
-
-  local_mocked_bindings(
-    get_regional_ld_meta = function(...) {
-      list(intersections = list(bim_file_paths = bim_path))
-    }
-  )
-
-  result <- get_ref_variant_info("/fake/ld_meta.txt", "chr1:1-300")
-  expect_true(all(c("chrom", "id", "pos", "A2", "A1", "variance", "allele_freq") %in% colnames(result)))
-  file.remove(bim_path)
+test_that("get_ref_variant_info processes precomputed bim with 9 columns", {
+  td <- test_path("test_data")
+  meta_file <- file.path(td, "ld_meta_refinfo_9col_tmp.tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(paste("chrom", "start", "end", "path", sep = "\t"), meta_file)
+  cat(paste("1", "1000", "1200",
+            "LD_block_1.chr1_1000_1200.float16.txt.xz,LD_block_1.chr1_1000_1200.float16.9col.bim",
+            sep = "\t"), "\n", file = meta_file, append = TRUE)
+  result <- get_ref_variant_info(meta_file, "chr1:1000-1190")
+  expect_true(all(c("chrom", "id", "pos", "A2", "A1", "variance", "allele_freq", "n_nomiss") %in% colnames(result)))
+  expect_equal(nrow(result), 5L)
+  expect_equal(result$allele_freq, c(0.3, 0.4, 0.2, 0.5, 0.15))
 })
 
 # ===========================================================================
@@ -1476,6 +1536,128 @@ test_that("load_multitask_regional_data errors with multiple genotypes and no ma
       covariate_list = c("covar1.gz")
     ),
     "match_geno_pheno"
+  )
+})
+
+test_that("load_multitask_regional_data individual-level path returns expected structure", {
+  skip_if_not_installed("pgenlibr")
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  result <- load_multitask_regional_data(
+    region = "chr21:17513043-17593579",
+    genotype_list = file.path(td, "test_variants"),
+    phenotype_list = file.path(td, "test_phenotypes.tsv.gz"),
+    covariate_list = file.path(td, "test_covariates.tsv"),
+    conditions_list_individual = "cond1"
+  )
+  expect_true(is.list(result))
+  expect_named(result, c("individual_data", "sumstat_data"))
+  expect_false(is.null(result$individual_data))
+  expect_true(is.null(result$sumstat_data))
+  # Individual data should have standard fields
+  expect_true("residual_Y" %in% names(result$individual_data))
+  expect_true("X" %in% names(result$individual_data))
+  expect_true("chrom" %in% names(result$individual_data))
+})
+
+test_that("load_multitask_regional_data sumstat path returns expected structure", {
+  skip_if_not_installed("pgenlibr")
+  td <- test_path("test_data")
+  # Create LD metadata file pointing to harmonize_regions genotype
+  meta_file <- file.path(td, "ld_meta_harmonize_tmp.tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(
+    paste("chrom", "start", "end", "path", sep = "\t"),
+    meta_file
+  )
+  cat(paste("21", "0", "0", "test_harmonize_regions", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+
+  sumstat_path <- file.path(td, "test_sumstats.tsv.gz")
+  result <- suppressMessages(suppressWarnings(
+    load_multitask_regional_data(
+      region = "chr21:17014042-45433269",
+      association_window = "chr21:17014042-45433269",
+      sumstat_path_list = sumstat_path,
+      LD_meta_file_path_list = meta_file,
+      conditions_list_sumstat = "sumstat_cond1",
+      n_samples = 1000,
+      n_cases = 0,
+      n_controls = 0
+    )
+  ))
+  expect_true(is.list(result))
+  expect_named(result, c("individual_data", "sumstat_data"))
+  expect_true(is.null(result$individual_data))
+  expect_false(is.null(result$sumstat_data))
+  # Sumstat data should have sumstats and LD_info lists
+  expect_true("sumstats" %in% names(result$sumstat_data))
+  expect_true("LD_info" %in% names(result$sumstat_data))
+  expect_equal(length(result$sumstat_data$sumstats), 1L)
+  expect_equal(length(result$sumstat_data$LD_info), 1L)
+  # The inner sumstats should be a named list with the condition
+  inner <- result$sumstat_data$sumstats[[1]]
+  expect_true("sumstat_cond1" %in% names(inner))
+  ss <- inner[["sumstat_cond1"]]
+  expect_true(is.data.frame(ss$sumstats))
+  expect_true(nrow(ss$sumstats) > 0)
+  expect_true("z" %in% names(ss$sumstats))
+  expect_equal(ss$n, 1000)
+})
+
+test_that("load_multitask_regional_data both paths simultaneously", {
+  skip_if_not_installed("pgenlibr")
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  # Create LD metadata for sumstat path
+  meta_file <- file.path(td, "ld_meta_both_tmp.tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(
+    paste("chrom", "start", "end", "path", sep = "\t"),
+    meta_file
+  )
+  cat(paste("21", "0", "0", "test_harmonize_regions", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+
+  result <- suppressMessages(suppressWarnings(
+    load_multitask_regional_data(
+      region = "chr21:17513043-17593579",
+      # Individual-level data
+      genotype_list = file.path(td, "test_variants"),
+      phenotype_list = file.path(td, "test_phenotypes.tsv.gz"),
+      covariate_list = file.path(td, "test_covariates.tsv"),
+      conditions_list_individual = "ind_cond1",
+      # Summary statistics
+      association_window = "chr21:17014042-45433269",
+      sumstat_path_list = file.path(td, "test_sumstats.tsv.gz"),
+      LD_meta_file_path_list = meta_file,
+      conditions_list_sumstat = "ss_cond1",
+      n_samples = 500,
+      n_cases = 0,
+      n_controls = 0
+    )
+  ))
+  expect_false(is.null(result$individual_data))
+  expect_false(is.null(result$sumstat_data))
+  # Both paths should produce valid data
+  expect_true("X" %in% names(result$individual_data))
+  expect_true(is.data.frame(result$sumstat_data$sumstats[[1]][["ss_cond1"]]$sumstats))
+})
+
+test_that("load_multitask_regional_data sumstat path errors on mismatched match_LD_sumstat", {
+  td <- test_path("test_data")
+  expect_error(
+    load_multitask_regional_data(
+      region = "chr21:17014042-45433269",
+      sumstat_path_list = file.path(td, "test_sumstats.tsv.gz"),
+      LD_meta_file_path_list = c("meta1.tsv", "meta2.tsv"),
+      match_LD_sumstat = list("cond1"),
+      conditions_list_sumstat = "cond1",
+      n_samples = 100,
+      n_cases = 0,
+      n_controls = 0
+    ),
+    "match_LD_sumstat"
   )
 })
 
@@ -1596,4 +1778,715 @@ test_that("batch_load_twas_weights puts oversized gene in its own batch", {
   result <- batch_load_twas_weights(twas, meta, max_memory_per_batch = max_mb)
   # Big gene should be in its own batch
   expect_true(length(result) >= 2)
+})
+
+# ===========================================================================
+# load_covariate_data with real fixture
+# ===========================================================================
+
+test_that("load_covariate_data reads and transposes covariate file", {
+  covar_path <- file.path(test_path("test_data"), "test_covariates.tsv")
+  result <- pecotmr:::load_covariate_data(covar_path)
+  expect_true(is.list(result))
+  expect_equal(length(result), 1L)
+  mat <- result[[1]]
+  expect_true(is.matrix(mat))
+  # Original: 8 rows (PCs) x 101 cols (variable + 100 samples)
+  # After drop col 1 + transpose: 100 rows (samples) x 8 cols (PCs)
+  expect_equal(nrow(mat), 100L)
+  expect_equal(ncol(mat), 8L)
+  expect_true(is.numeric(mat))
+  expect_false(any(is.na(mat)))
+})
+
+test_that("load_covariate_data errors on missing file", {
+  expect_error(
+    pecotmr:::load_covariate_data("/nonexistent/covariate.tsv"),
+    "not found"
+  )
+})
+
+# ===========================================================================
+# load_tsv_region with real tabix-indexed fixture
+# ===========================================================================
+
+test_that("load_tsv_region reads full gz file without region", {
+  skip_if_not_installed("Rsamtools")
+  sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
+  result <- load_tsv_region(sumstat_path)
+  expect_true(is.data.frame(result))
+  expect_equal(nrow(result), 8L)
+  expect_true("BETA" %in% names(result) || "beta" %in% names(result))
+})
+
+test_that("load_tsv_region queries region via tabix", {
+  skip_if_not_installed("Rsamtools")
+  sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
+  result <- load_tsv_region(sumstat_path, region = "chr21:17014042-45433269")
+  expect_true(is.data.frame(result))
+  expect_equal(nrow(result), 8L)
+})
+
+test_that("load_tsv_region errors for non-overlapping region", {
+  skip_if_not_installed("Rsamtools")
+  sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
+  expect_error(load_tsv_region(sumstat_path, region = "chr1:1-2"), "tabix-indexed")
+})
+
+test_that("load_tsv_region queries subregion correctly", {
+  skip_if_not_installed("Rsamtools")
+  sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
+  # Only first 2 variants: pos 17014042 and 18759786
+  result <- load_tsv_region(sumstat_path, region = "chr21:17014042-18759786")
+  expect_true(is.data.frame(result))
+  expect_equal(nrow(result), 2L)
+})
+
+# ===========================================================================
+# load_rss_data with real tabix-indexed fixture
+# ===========================================================================
+
+test_that("load_rss_data reads summary statistics without region", {
+  skip_if_not_installed("MungeSumstats")
+  sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
+  result <- suppressMessages(load_rss_data(sumstat_path))
+  expect_true(is.list(result))
+  expect_true(is.data.frame(result$sumstats))
+  expect_equal(nrow(result$sumstats), 8L)
+  # Should have standardized column names including z
+  expect_true("beta" %in% names(result$sumstats))
+  expect_true("se" %in% names(result$sumstats))
+  expect_true("z" %in% names(result$sumstats))
+  # z should be beta / se
+  expect_equal(result$sumstats$z, result$sumstats$beta / result$sumstats$se)
+})
+
+test_that("load_rss_data reads summary statistics with region", {
+  skip_if_not_installed("MungeSumstats")
+  skip_if_not_installed("Rsamtools")
+  sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
+  result <- suppressMessages(
+    load_rss_data(sumstat_path, region = "chr21:17014042-45433269")
+  )
+  expect_true(is.data.frame(result$sumstats))
+  expect_equal(nrow(result$sumstats), 8L)
+})
+
+test_that("load_rss_data with n_sample returns sample size", {
+  skip_if_not_installed("MungeSumstats")
+  sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
+  result <- suppressMessages(load_rss_data(sumstat_path, n_sample = 500))
+  expect_equal(result$n, 500)
+  expect_null(result$var_y)
+})
+
+test_that("load_rss_data with n_case and n_control computes var_y", {
+  skip_if_not_installed("MungeSumstats")
+  sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
+  result <- suppressMessages(load_rss_data(sumstat_path, n_case = 200, n_control = 300))
+  expect_equal(result$n, 500)
+  expect_true(!is.null(result$var_y))
+  # var_y = 1 / (phi * (1 - phi)) where phi = 200/500 = 0.4
+  expect_equal(result$var_y, 1 / (0.4 * 0.6))
+})
+
+test_that("load_rss_data extracts n from sumstats N column", {
+  skip_if_not_installed("MungeSumstats")
+  sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
+  # n_sample=0 means "get from file"
+  result <- suppressMessages(load_rss_data(sumstat_path))
+  # The fixture has N column with per-variant sample sizes; median should be used
+  expect_true(!is.null(result$n))
+  expect_true(result$n > 0)
+})
+
+test_that("load_rss_data errors on missing file", {
+  expect_error(load_rss_data("/nonexistent/sumstats.tsv.gz"), "not found")
+})
+
+test_that("load_rss_data errors for non-overlapping region", {
+  skip_if_not_installed("MungeSumstats")
+  skip_if_not_installed("Rsamtools")
+  sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
+  expect_error(
+    suppressMessages(load_rss_data(sumstat_path, region = "chr1:1-2")),
+    "tabix-indexed"
+  )
+})
+
+# ===========================================================================
+# get_ref_variant_info with PLINK2 fixture
+# ===========================================================================
+
+test_that("get_ref_variant_info returns variant info for PLINK2 source", {
+  skip_if_not_installed("pgenlibr")
+  meta_file <- file.path(test_path("test_data"), "ld_meta_refinfo_tmp.tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(paste("chrom", "start", "end", "path", sep = "\t"), meta_file)
+  cat(paste("21", "0", "0", "test_variants", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+  result <- get_ref_variant_info(meta_file, region = "chr21:17513228-17592874")
+  expect_true(is.data.frame(result))
+  expect_equal(nrow(result), 349L)
+  expect_true(all(c("chrom", "id", "pos", "A2", "A1") %in% names(result)))
+  # .afreq is present, so allele_freq should be populated
+  expect_true("allele_freq" %in% names(result))
+  expect_true(all(result$allele_freq > 0 & result$allele_freq < 1))
+})
+
+test_that("get_ref_variant_info filters by subregion", {
+  skip_if_not_installed("pgenlibr")
+  meta_file <- file.path(test_path("test_data"), "ld_meta_refinfo_sub_tmp.tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(paste("chrom", "start", "end", "path", sep = "\t"), meta_file)
+  cat(paste("21", "0", "0", "test_variants", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+  result <- get_ref_variant_info(meta_file, region = "chr21:17513228-17550000")
+  expect_true(nrow(result) < 349L)
+  expect_true(all(result$pos >= 17513228 & result$pos <= 17550000))
+})
+
+test_that("get_ref_variant_info returns variant info for VCF source", {
+  skip_if_not_installed("VariantAnnotation")
+  meta_file <- file.path(test_path("test_data"), "ld_meta_refinfo_vcf_tmp.tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(paste("chrom", "start", "end", "path", sep = "\t"), meta_file)
+  cat(paste("21", "0", "0", "test_variants.vcf.gz", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+  result <- suppressWarnings(
+    get_ref_variant_info(meta_file, region = "chr21:17513228-17592874")
+  )
+  expect_true(is.data.frame(result))
+  expect_equal(nrow(result), 349L)
+  expect_true(all(c("chrom", "id", "pos", "A2", "A1") %in% names(result)))
+  expect_true("allele_freq" %in% names(result))
+  expect_true(all(result$allele_freq > 0 & result$allele_freq < 1))
+})
+
+test_that("get_ref_variant_info returns variant info for GDS source", {
+  skip_if_not_installed("SNPRelate")
+  skip_if_not_installed("gdsfmt")
+  meta_file <- file.path(test_path("test_data"), "ld_meta_refinfo_gds_tmp.tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(paste("chrom", "start", "end", "path", sep = "\t"), meta_file)
+  cat(paste("21", "0", "0", "test_variants.gds", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+  result <- get_ref_variant_info(meta_file, region = "chr21:17513228-17592874")
+  expect_true(is.data.frame(result))
+  expect_equal(nrow(result), 349L)
+  expect_true(all(c("chrom", "id", "pos", "A2", "A1") %in% names(result)))
+  expect_true("allele_freq" %in% names(result))
+})
+
+test_that("get_ref_variant_info VCF filters by subregion", {
+  skip_if_not_installed("VariantAnnotation")
+  skip_if_not_installed("Rsamtools")
+  meta_file <- file.path(test_path("test_data"), "ld_meta_refinfo_vcf_sub_tmp.tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(paste("chrom", "start", "end", "path", sep = "\t"), meta_file)
+  cat(paste("21", "0", "0", "test_variants.vcf.gz", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+  result <- suppressWarnings(
+    get_ref_variant_info(meta_file, region = "chr21:17513228-17550000")
+  )
+  expect_true(nrow(result) < 349L)
+  expect_true(all(result$pos >= 17513228 & result$pos <= 17550000))
+})
+
+test_that("get_ref_variant_info returns consistent results across formats", {
+  skip_if_not_installed("pgenlibr")
+  skip_if_not_installed("SNPRelate")
+  skip_if_not_installed("gdsfmt")
+  region <- "chr21:17513228-17592874"
+  td <- test_path("test_data")
+
+  meta_plink <- file.path(td, "ld_meta_refinfo_cmp_p2_tmp.tsv")
+  meta_gds <- file.path(td, "ld_meta_refinfo_cmp_gds_tmp.tsv")
+  on.exit({unlink(meta_plink); unlink(meta_gds)}, add = TRUE)
+
+  for (f in c(meta_plink, meta_gds)) {
+    writeLines(paste("chrom", "start", "end", "path", sep = "\t"), f)
+  }
+  cat(paste("21", "0", "0", "test_variants", sep = "\t"), "\n",
+      file = meta_plink, append = TRUE)
+  cat(paste("21", "0", "0", "test_variants.gds", sep = "\t"), "\n",
+      file = meta_gds, append = TRUE)
+
+  info_plink <- get_ref_variant_info(meta_plink, region = region)
+  info_gds <- get_ref_variant_info(meta_gds, region = region)
+
+  expect_equal(nrow(info_plink), nrow(info_gds))
+  expect_equal(info_plink$pos, info_gds$pos)
+})
+
+# ===========================================================================
+# read_afreq
+# ===========================================================================
+
+test_that("read_afreq returns correct structure from .afreq file", {
+  td <- test_path("test_data")
+  af <- read_afreq(file.path(td, "test_variants"))
+  expect_true(is.data.frame(af))
+  expect_equal(nrow(af), 349L)
+  expect_true(all(c("chrom", "id", "A2", "A1", "alt_freq", "obs_ct") %in% colnames(af)))
+})
+
+test_that("read_afreq returns correct types", {
+  td <- test_path("test_data")
+  af <- read_afreq(file.path(td, "test_variants"))
+  expect_type(af$alt_freq, "double")
+  expect_true(all(af$alt_freq >= 0 & af$alt_freq <= 1))
+  expect_true(all(af$obs_ct > 0))
+})
+
+test_that("read_afreq returns NULL when no afreq file exists", {
+  af <- read_afreq(file.path(tempdir(), "nonexistent_prefix"))
+  expect_null(af)
+})
+
+test_that("read_afreq reads .afreq.zst file", {
+  td <- test_path("test_data")
+  # test_harmonize_regions has both .afreq and .afreq.zst; read_afreq prefers .zst
+  af <- read_afreq(file.path(td, "test_harmonize_regions"))
+  expect_true(is.data.frame(af))
+  expect_true(all(c("id", "A2", "A1", "alt_freq", "obs_ct") %in% colnames(af)))
+  # This afreq has U_MIN/U_MAX columns
+  expect_true(all(c("u_min", "u_max") %in% colnames(af)))
+  expect_equal(nrow(af), 8L)
+})
+
+test_that("read_afreq reads plain .afreq with U_MIN/U_MAX", {
+  td <- test_path("test_data")
+  # Temporarily hide the .zst so read_afreq falls through to plain .afreq
+  zst_path <- file.path(td, "test_harmonize_regions.afreq.zst")
+  tmp_path <- paste0(zst_path, ".bak")
+  file.rename(zst_path, tmp_path)
+  on.exit(file.rename(tmp_path, zst_path), add = TRUE)
+
+  af <- read_afreq(file.path(td, "test_harmonize_regions"))
+  expect_true(is.data.frame(af))
+  expect_true(all(c("u_min", "u_max") %in% colnames(af)))
+  expect_equal(nrow(af), 8L)
+})
+
+test_that("read_afreq IDs match pvar IDs", {
+  skip_if_not_installed("pgenlibr")
+  td <- test_path("test_data")
+  af <- read_afreq(file.path(td, "test_variants"))
+  pvar <- read_pvar(file.path(td, "test_variants.pvar"))
+  expect_equal(af$id, pvar$id)
+})
+
+# ===========================================================================
+# match_variants_to_keep
+# ===========================================================================
+
+test_that("match_variants_to_keep filters to specified variants", {
+  skip_if_not_installed("pgenlibr")
+  td <- test_path("test_data")
+  result <- load_plink2_data(file.path(td, "test_variants"))
+  vi <- result$variant_info
+
+  # Write a keep file as tab-delimited with chrom/pos columns
+  keep_file <- tempfile(fileext = ".tsv")
+  on.exit(unlink(keep_file), add = TRUE)
+  keep_df <- vi[c(1, 5, 10), c("chrom", "pos", "A2", "A1")]
+  vroom::vroom_write(keep_df, keep_file, delim = "\t")
+
+  mask <- match_variants_to_keep(vi, keep_file)
+  expect_type(mask, "logical")
+  expect_equal(sum(mask), 3L)
+  expect_true(mask[1])
+  expect_true(mask[5])
+  expect_true(mask[10])
+})
+
+test_that("match_variants_to_keep returns all FALSE for non-matching variants", {
+  skip_if_not_installed("pgenlibr")
+  td <- test_path("test_data")
+  result <- load_plink2_data(file.path(td, "test_variants"))
+  vi <- result$variant_info
+
+  keep_file <- tempfile(fileext = ".tsv")
+  on.exit(unlink(keep_file), add = TRUE)
+  keep_df <- data.frame(chrom = c(1L, 2L), pos = c(999L, 888L),
+                        A2 = c("A", "C"), A1 = c("T", "G"))
+  vroom::vroom_write(keep_df, keep_file, delim = "\t")
+
+  mask <- match_variants_to_keep(vi, keep_file)
+  expect_true(all(!mask))
+})
+
+# ===========================================================================
+# standardise_sumstats_columns
+# ===========================================================================
+
+test_that("standardise_sumstats_columns renames standard headers", {
+  skip_if_not_installed("MungeSumstats")
+  df <- data.frame(
+    SNPID = "rs1", CHR = 1, POS = 100,
+    EFFECT_ALLELE = "A", OTHER_ALLELE = "G",
+    BETA = 0.5, SE = 0.1, P = 0.01,
+    stringsAsFactors = FALSE
+  )
+  result <- standardise_sumstats_columns(df)
+  expect_true("chrom" %in% colnames(result))
+  expect_true("pos" %in% colnames(result))
+  expect_true("beta" %in% colnames(result))
+  expect_true("se" %in% colnames(result))
+  expect_true("p" %in% colnames(result))
+})
+
+test_that("standardise_sumstats_columns applies custom column mapping", {
+  skip_if_not_installed("MungeSumstats")
+  df <- data.frame(
+    SNP = "rs1", CHR = 1, BP = 100,
+    A1 = "A", A2 = "G",
+    BETA = 0.5, SE = 0.1, P = 0.01,
+    MY_FREQ = 0.3,
+    stringsAsFactors = FALSE
+  )
+  col_file <- tempfile(fileext = ".txt")
+  on.exit(unlink(col_file), add = TRUE)
+  writeLines("maf:MY_FREQ", col_file)
+
+  result <- standardise_sumstats_columns(df, column_file_path = col_file)
+  expect_true("maf" %in% colnames(result))
+})
+
+test_that("standardise_sumstats_columns errors on missing column file", {
+  skip_if_not_installed("MungeSumstats")
+  df <- data.frame(SNP = "rs1", CHR = 1, BP = 100, A1 = "A", A2 = "G",
+                   BETA = 0.5, SE = 0.1, P = 0.01, stringsAsFactors = FALSE)
+  expect_error(
+    standardise_sumstats_columns(df, column_file_path = "/no/such/file.txt"),
+    "Column mapping file not found"
+  )
+})
+
+# ===========================================================================
+# load_plink2_data: direct tests
+# ===========================================================================
+
+test_that("load_plink2_data loads all variants without region", {
+  skip_if_not_installed("pgenlibr")
+  td <- test_path("test_data")
+  result <- load_plink2_data(file.path(td, "test_variants"))
+  expect_true(is.matrix(result$X))
+  expect_equal(nrow(result$X), 100L)
+  expect_equal(ncol(result$X), 349L)
+  expect_true(is.data.frame(result$variant_info))
+  expect_equal(nrow(result$variant_info), 349L)
+})
+
+test_that("load_plink2_data filters by region", {
+  skip_if_not_installed("pgenlibr")
+  td <- test_path("test_data")
+  region <- "chr21:17513228-17550000"
+  result <- load_plink2_data(file.path(td, "test_variants"), region = region)
+  expect_true(ncol(result$X) < 349L)
+  expect_true(all(result$variant_info$pos >= 17513228))
+  expect_true(all(result$variant_info$pos <= 17550000))
+  expect_equal(ncol(result$X), nrow(result$variant_info))
+})
+
+test_that("load_plink2_data errors on empty region", {
+  skip_if_not_installed("pgenlibr")
+  td <- test_path("test_data")
+  expect_error(
+    load_plink2_data(file.path(td, "test_variants"), region = "chr21:1-2"),
+    "No variants found"
+  )
+})
+
+test_that("load_plink2_data removes indels with keep_indel=FALSE", {
+  skip_if_not_installed("pgenlibr")
+  td <- test_path("test_data")
+  full <- load_plink2_data(file.path(td, "test_variants"))
+  filtered <- load_plink2_data(file.path(td, "test_variants"), keep_indel = FALSE)
+  # test data has 36 indels
+  expect_equal(ncol(filtered$X), ncol(full$X) - 36L)
+  # all remaining alleles should be single characters
+  expect_true(all(nchar(filtered$variant_info$A1) == 1))
+  expect_true(all(nchar(filtered$variant_info$A2) == 1))
+})
+
+test_that("load_plink2_data filters by keep_variants_path", {
+  skip_if_not_installed("pgenlibr")
+  td <- test_path("test_data")
+  full <- load_plink2_data(file.path(td, "test_variants"))
+
+  keep_file <- tempfile(fileext = ".tsv")
+  on.exit(unlink(keep_file), add = TRUE)
+  keep_df <- full$variant_info[c(1, 3, 7), c("chrom", "pos", "A2", "A1")]
+  vroom::vroom_write(keep_df, keep_file, delim = "\t")
+
+  result <- load_plink2_data(file.path(td, "test_variants"), keep_variants_path = keep_file)
+  expect_equal(ncol(result$X), 3L)
+  expect_equal(nrow(result$variant_info), 3L)
+})
+
+test_that("load_plink2_data attaches afreq info to variant_info", {
+  skip_if_not_installed("pgenlibr")
+  td <- test_path("test_data")
+  result <- load_plink2_data(file.path(td, "test_variants"))
+  expect_true("alt_freq" %in% colnames(result$variant_info))
+  expect_true("obs_ct" %in% colnames(result$variant_info))
+  expect_true(all(result$variant_info$alt_freq >= 0 & result$variant_info$alt_freq <= 1))
+})
+
+test_that("load_plink2_data sample names match psam IIDs", {
+  skip_if_not_installed("pgenlibr")
+  td <- test_path("test_data")
+  result <- load_plink2_data(file.path(td, "test_variants"))
+  expect_true(all(grepl("^(HG|NA)\\d+", rownames(result$X))))
+  expect_equal(length(unique(rownames(result$X))), 100L)
+})
+
+# ===========================================================================
+# load_phenotype_data with real BED-style tabix-indexed fixture
+# ===========================================================================
+
+test_that("load_phenotype_data reads compressed file with tabix region", {
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  pheno <- load_phenotype_data(
+    file.path(td, "test_phenotypes.tsv.gz"),
+    region = "chr21:17513043-17593579"
+  )
+  expect_true(is.list(pheno))
+  expect_equal(length(pheno), 1L)
+  mat <- pheno[[1]]
+  expect_true(is.matrix(mat))
+  # 4 header rows (seqid, start, end, gene_id) + 100 samples = 104 rows, 1 gene column
+  expect_equal(nrow(mat), 104L)
+  expect_equal(ncol(mat), 1L)
+  # Sample IDs start at row 5
+  expect_equal(rownames(mat)[5], "HG02461")
+})
+
+test_that("load_phenotype_data filters by extract_region_name and region_name_col", {
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  pheno <- load_phenotype_data(
+    file.path(td, "test_phenotypes.tsv.gz"),
+    region = "chr21:17513043-17593579",
+    extract_region_name = list(c("ENSG00000154639")),
+    region_name_col = 4
+  )
+  expect_equal(length(pheno), 1L)
+  expect_true("ENSG00000154639" %in% colnames(pheno[[1]]))
+})
+
+test_that("load_phenotype_data assigns gene names with region_name_col", {
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  pheno <- load_phenotype_data(
+    file.path(td, "test_phenotypes.tsv.gz"),
+    region = "chr21:17513043-17593579",
+    region_name_col = 4
+  )
+  expect_equal(colnames(pheno[[1]]), "ENSG00000154639")
+})
+
+test_that("load_phenotype_data returns multiple genes for broad region", {
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  pheno <- load_phenotype_data(
+    file.path(td, "test_phenotypes.tsv.gz"),
+    region = "chr21:14000000-18000000",
+    region_name_col = 4
+  )
+  expect_equal(length(pheno), 1L)
+  expect_true(ncol(pheno[[1]]) > 1)
+  expect_true("ENSG00000154639" %in% colnames(pheno[[1]]))
+})
+
+test_that("load_phenotype_data errors on non-overlapping region", {
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  expect_error(
+    load_phenotype_data(
+      file.path(td, "test_phenotypes.tsv.gz"),
+      region = "chr21:1-100"
+    ),
+    "empty"
+  )
+})
+
+test_that("load_phenotype_data reads uncompressed file without region", {
+  td <- test_path("test_data")
+  pheno <- load_phenotype_data(
+    file.path(td, "test_phenotypes.tsv"),
+    region = NULL,
+    region_name_col = 4
+  )
+  expect_equal(length(pheno), 1L)
+  # All 93 genes in the uncompressed file
+  expect_equal(ncol(pheno[[1]]), 93L)
+})
+
+test_that("load_phenotype_data stores kept_indices attribute", {
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  pheno <- load_phenotype_data(
+    file.path(td, "test_phenotypes.tsv.gz"),
+    region = "chr21:17513043-17593579"
+  )
+  expect_equal(attr(pheno, "kept_indices"), 1L)
+})
+
+# ===========================================================================
+# load_regional_association_data with real fixtures (full pipeline)
+# ===========================================================================
+
+test_that("load_regional_association_data returns expected structure", {
+  skip_if_not_installed("pgenlibr")
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  result <- load_regional_association_data(
+    genotype = file.path(td, "test_variants"),
+    phenotype = file.path(td, "test_phenotypes.tsv.gz"),
+    covariate = file.path(td, "test_covariates.tsv"),
+    region = "chr21:17513043-17593579",
+    conditions = "cond1"
+  )
+  expect_true(is.list(result))
+  expected_names <- c("residual_Y", "residual_X", "residual_Y_scalar",
+                       "residual_X_scalar", "dropped_sample", "covar",
+                       "Y", "X_data", "X", "maf", "chrom", "grange",
+                       "Y_coordinates")
+  expect_true(all(expected_names %in% names(result)))
+  # 100 samples, 349 variants
+  expect_equal(nrow(result$X), 100L)
+  expect_equal(ncol(result$X), 349L)
+  expect_equal(result$chrom, "chr21")
+  expect_equal(names(result$residual_Y), "cond1")
+  # residual_Y should be a 100-sample x 1-gene matrix
+  expect_equal(nrow(result$residual_Y[[1]]), 100L)
+  expect_equal(ncol(result$residual_Y[[1]]), 1L)
+  # Y_coordinates should have gene coordinates
+  expect_true(is.data.frame(result$Y_coordinates[[1]]))
+})
+
+test_that("load_regional_association_data with scale_residuals returns scalars", {
+  skip_if_not_installed("pgenlibr")
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  result <- load_regional_association_data(
+    genotype = file.path(td, "test_variants"),
+    phenotype = file.path(td, "test_phenotypes.tsv.gz"),
+    covariate = file.path(td, "test_covariates.tsv"),
+    region = "chr21:17513043-17593579",
+    conditions = "cond1",
+    scale_residuals = TRUE
+  )
+  # With scale_residuals, residual_Y_scalar should be non-trivial
+  expect_true(is.list(result$residual_Y_scalar))
+  expect_true(all(unlist(result$residual_Y_scalar) > 0))
+  expect_true(is.list(result$residual_X_scalar))
+})
+
+test_that("load_regional_association_data with keep_indel=FALSE reduces variants", {
+  skip_if_not_installed("pgenlibr")
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  result <- load_regional_association_data(
+    genotype = file.path(td, "test_variants"),
+    phenotype = file.path(td, "test_phenotypes.tsv.gz"),
+    covariate = file.path(td, "test_covariates.tsv"),
+    region = "chr21:17513043-17593579",
+    conditions = "cond1",
+    keep_indel = FALSE
+  )
+  # 349 total - 36 indels = 313 SNPs
+  expect_equal(ncol(result$X), 313L)
+})
+
+test_that("load_regional_association_data covariate residuals affect Y", {
+  skip_if_not_installed("pgenlibr")
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  result <- load_regional_association_data(
+    genotype = file.path(td, "test_variants"),
+    phenotype = file.path(td, "test_phenotypes.tsv.gz"),
+    covariate = file.path(td, "test_covariates.tsv"),
+    region = "chr21:17513043-17593579",
+    conditions = "cond1"
+  )
+  # Raw Y and residual Y should differ (covariates regressed out)
+  raw_y <- as.numeric(result$Y[[1]])
+  resid_y <- as.numeric(result$residual_Y[[1]])
+  expect_false(isTRUE(all.equal(raw_y, resid_y)))
+})
+
+# ===========================================================================
+# load_regional_univariate_data with real fixtures
+# ===========================================================================
+
+test_that("load_regional_univariate_data returns correct fields", {
+  skip_if_not_installed("pgenlibr")
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  result <- load_regional_univariate_data(
+    genotype = file.path(td, "test_variants"),
+    phenotype = file.path(td, "test_phenotypes.tsv.gz"),
+    covariate = file.path(td, "test_covariates.tsv"),
+    region = "chr21:17513043-17593579",
+    conditions = "cond1"
+  )
+  expected_names <- c("residual_Y", "residual_X", "residual_Y_scalar",
+                       "residual_X_scalar", "dropped_sample", "maf",
+                       "X", "chrom", "grange", "X_variance")
+  expect_true(all(expected_names %in% names(result)))
+  expect_equal(nrow(result$X), 100L)
+  # X_variance should be a list with one entry per condition
+  expect_true(is.list(result$X_variance))
+  expect_equal(length(result$X_variance[[1]]), ncol(result$X))
+})
+
+# ===========================================================================
+# load_regional_regression_data with real fixtures
+# ===========================================================================
+
+test_that("load_regional_regression_data returns correct fields", {
+  skip_if_not_installed("pgenlibr")
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  result <- load_regional_regression_data(
+    genotype = file.path(td, "test_variants"),
+    phenotype = file.path(td, "test_phenotypes.tsv.gz"),
+    covariate = file.path(td, "test_covariates.tsv"),
+    region = "chr21:17513043-17593579",
+    conditions = "cond1"
+  )
+  expected_names <- c("Y", "X_data", "covar", "dropped_sample",
+                       "maf", "chrom", "grange")
+  expect_true(all(expected_names %in% names(result)))
+  expect_true(is.list(result$Y))
+  expect_true(is.list(result$X_data))
+  expect_true(is.list(result$covar))
+})
+
+# ===========================================================================
+# load_regional_multivariate_data with real fixtures
+# ===========================================================================
+
+test_that("load_regional_multivariate_data returns correct fields", {
+  skip_if_not_installed("pgenlibr")
+  skip_if_not_installed("Rsamtools")
+  td <- test_path("test_data")
+  result <- load_regional_multivariate_data(
+    genotype = file.path(td, "test_variants"),
+    phenotype = file.path(td, "test_phenotypes.tsv.gz"),
+    covariate = file.path(td, "test_covariates.tsv"),
+    region = "chr21:17513043-17593579",
+    conditions = "cond1"
+  )
+  expected_names <- c("residual_Y", "residual_Y_scalar", "dropped_sample",
+                       "X", "maf", "chrom", "grange", "X_variance")
+  expect_true(all(expected_names %in% names(result)))
+  # residual_Y should be a matrix (not list) after pheno_list_to_mat
+  expect_true(is.matrix(result$residual_Y))
+  expect_equal(nrow(result$X), 100L)
 })

@@ -15,8 +15,10 @@ Authors@R: c(person("Gao Wang",role = c("cre","aut"),
 License: MIT + file LICENSE
 Imports:
     Biostrings,
+    GenomicRanges,
     IRanges,
-    Rcpp,
+    MungeSumstats,
+    Rsamtools,
     S4Vectors,
     coloc,
     doFuture,
@@ -58,15 +60,18 @@ Suggests:
     qgg,
     qvalue,
     rmarkdown,
+    gdsfmt,
+    SNPRelate,
     snpStats,
-    testthat
+    testthat,
+    VariantAnnotation
 Remotes:
     stephenslab/fsusieR,
     stephenslab/mvsusieR,
     stephenslab/susieR,
 LinkingTo:
-    Rcpp,
-    RcppArmadillo
+    cpp11,
+    cpp11armadillo
 NeedsCompilation: yes
 VignetteBuilder: knitr
 RoxygenNote: 7.3.3
