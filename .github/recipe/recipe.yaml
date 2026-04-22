@@ -59,6 +59,7 @@ requirements:
     - r-pgenlibr
     - r-purrr
     - r-qgg
+    - r-quadprog
     - r-rcppdpr
     - r-readr
     - r-rfast

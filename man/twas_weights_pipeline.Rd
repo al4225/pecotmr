@@ -15,7 +15,8 @@ twas_weights_pipeline(
     = 100), susie_weights = list(refine = FALSE, init_L = 5, max_L = 20)),
   max_cv_variants = -1,
   cv_threads = 1,
-  cv_weight_methods = NULL
+  cv_weight_methods = NULL,
+  ensemble = FALSE
 )
 }
 \arguments{
@@ -34,6 +35,9 @@ twas_weights_pipeline(
 \item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Defaults to 1.}
 
 \item{cv_weight_methods}{List of methods to use for cross-validation. If NULL, uses the same methods as weight_methods.}
+
+\item{ensemble}{Logical. If TRUE and cv_folds > 1, learn ensemble combination
+weights via stacked regression (SR-TWAS). Defaults to FALSE.}
 }
 \value{
 A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.

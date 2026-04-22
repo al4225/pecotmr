@@ -57,6 +57,7 @@ Suggests:
     mvsusieR,
     ncvreg,
     pgenlibr,
+    quadprog,
     qgg,
     qvalue,
     rmarkdown,
