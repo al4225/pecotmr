@@ -1,6 +1,6 @@
 # pecotmr
 
-[![CI](https://github.com/StatFunGen/pecotmr/actions/workflows/ci.yml/badge.svg)](https://github.com/StatFunGen/pecotmr/actions/workflows/ci.yml)
+[![CI](https://github.com/StatFunGen/pecotmr/actions/workflows/ci.yml/badge.svg?branch=)](https://github.com/StatFunGen/pecotmr/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/StatFunGen/pecotmr/graph/badge.svg?token=NFH9R1OPG7)](https://codecov.io/gh/StatFunGen/pecotmr)
 [![Website](https://github.com/StatFunGen/pecotmr/actions/workflows/pkgdown.yml/badge.svg)](https://statfungen.github.io/pecotmr)
 
