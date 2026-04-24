@@ -457,13 +457,22 @@ qc_regional_data <- function(region_data,
                              impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)) {
   qc_method <- match.arg(qc_method)
 
-  # Validate and recycle pip_cutoff_to_skip_ind: scalar -> recycled to n_contexts
+  # Validate and recycle pip_cutoff_to_skip_ind: scalar -> named vector for all contexts
   if (!is.null(region_data$individual_data)) {
-    n_ind_contexts <- length(region_data$individual_data$residual_Y)
-    if (length(pip_cutoff_to_skip_ind) == 1) {
-      pip_cutoff_to_skip_ind <- rep(pip_cutoff_to_skip_ind, n_ind_contexts)
-    } else if (length(pip_cutoff_to_skip_ind) != n_ind_contexts) {
-      stop("pip_cutoff_to_skip_ind must be a scalar or a vector with length equal to the number of individual contexts (", n_ind_contexts, ").")
+    ind_context_names <- names(region_data$individual_data$residual_Y)
+    n_ind_contexts <- length(ind_context_names)
+    if (length(pip_cutoff_to_skip_ind) == 1 && is.null(names(pip_cutoff_to_skip_ind))) {
+      pip_cutoff_to_skip_ind <- setNames(rep(pip_cutoff_to_skip_ind, n_ind_contexts), ind_context_names)
+    } else if (!is.null(names(pip_cutoff_to_skip_ind))) {
+      # Named vector: fill missing contexts with 0
+      missing <- setdiff(ind_context_names, names(pip_cutoff_to_skip_ind))
+      if (length(missing) > 0) {
+        pip_cutoff_to_skip_ind <- c(pip_cutoff_to_skip_ind, setNames(rep(0, length(missing)), missing))
+      }
+    } else if (length(pip_cutoff_to_skip_ind) == n_ind_contexts) {
+      names(pip_cutoff_to_skip_ind) <- ind_context_names
+    } else {
+      stop("pip_cutoff_to_skip_ind must be a scalar, a named vector, or a vector with length equal to the number of individual contexts (", n_ind_contexts, ").")
     }
   }
 
@@ -543,10 +552,14 @@ qc_regional_data <- function(region_data,
     results <- purrr::imap(X, function(resX, context) {
       resY <- Y[[context]]
       maf <- MAF[[context]]
-      i_context <- match(context, names(X))
+      pip_cutoff <- if (context %in% names(pip_cutoff_to_skip_ind)) {
+        pip_cutoff_to_skip_ind[[context]]
+      } else {
+        0
+      }
       if (is.null(resY)) return(NULL)
       resX <- filter_X(resX, missing_rate_thresh = NULL, maf_thresh = maf_cutoff, maf = maf)
-      resY <- filter_resY_pip(resX, resY, pip_cutoff = pip_cutoff_to_skip_ind[i_context], context = context)
+      resY <- filter_resY_pip(resX, resY, pip_cutoff = pip_cutoff, context = context)
       if (is.null(resY)) return(NULL)
       list(X = resX, Y = resY)
     }) %>% purrr::compact()

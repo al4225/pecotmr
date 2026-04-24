@@ -1,5 +1,85 @@
-### File-I/O functions (ctwas_bimfile_loader, get_ctwas_meta_data) have been
-### removed. Use ld_loader() and read_bim() from the standard I/O path instead.
+#' Load a PLINK .bim file for cTWAS
+#'
+#' @description
+#' \strong{Deprecated.} Use [read_bim()] via the standard I/O path
+#' instead. This wrapper remains for backwards compatibility and calls
+#' [read_bim()] internally, mapping its output to the legacy column names.
+#'
+#' @param bim_file_path Path to a PLINK \code{.bim} file (or a \code{.bed}
+#'   file — the \code{.bim} extension is resolved automatically).
+#'
+#' @return A data.frame with columns \code{chrom}, \code{id}, \code{GD},
+#'   \code{pos}, \code{A1}, \code{A2}. Variant IDs are normalised via
+#'   [normalize_variant_id()].
+#'
+#' @export
+ctwas_bimfile_loader <- function(bim_file_path) {
+  .Deprecated("read_bim", package = "pecotmr",
+              msg = "ctwas_bimfile_loader() is deprecated. Use read_bim() instead.")
+  # read_bim() expects a .bed path and derives .bim from it.
+  # Accept either .bim or .bed and normalise to .bed.
+  bed_path <- sub("\\.bim$", ".bed", bim_file_path)
+  bim <- read_bim(bed_path)
+  # Map new column names back to legacy names
+  snp_info <- data.frame(
+    chrom = bim$chrom,
+    id    = normalize_variant_id(bim$id),
+    GD    = bim$gpos,
+    pos   = bim$pos,
+    A1    = bim$a1,
+    A2    = bim$a0,
+    stringsAsFactors = FALSE
+  )
+  return(snp_info)
+}
+
+#' Load cTWAS LD meta-data
+#'
+#' @description
+#' \strong{Deprecated.} Use [ld_loader()] with its \code{LD_info}
+#' argument instead. This wrapper remains for backwards compatibility and
+#' produces the same \code{list(LD_info, region_info)} output as the original.
+#'
+#' @param ld_meta_data_file Path to the LD meta-data TSV file.
+#' @param subset_region_ids Optional character vector of region IDs
+#'   (\code{"chrom_start_end"}) to subset to.
+#'
+#' @return A list with components:
+#' \describe{
+#'   \item{LD_info}{Data.frame with columns \code{region_id}, \code{LD_file},
+#'     \code{SNP_file}.}
+#'   \item{region_info}{Data.frame with columns \code{chrom}, \code{start},
+#'     \code{stop}, \code{region_id}.}
+#' }
+#'
+#' @importFrom vroom vroom
+#' @export
+get_ctwas_meta_data <- function(ld_meta_data_file, subset_region_ids = NULL) {
+  .Deprecated("ld_loader", package = "pecotmr",
+              msg = "get_ctwas_meta_data() is deprecated. Use ld_loader() with LD_info instead.")
+  LD_info <- as.data.frame(vroom(ld_meta_data_file))
+  colnames(LD_info)[1] <- "chrom"
+  LD_info$region_id <- paste(as.integer(strip_chr_prefix(LD_info$chrom)),
+                             LD_info$start, LD_info$end, sep = "_")
+  LD_info$LD_file <- paste0(dirname(ld_meta_data_file), "/",
+                            gsub(",.*$", "", LD_info$path))
+  LD_info$SNP_file <- paste0(LD_info$LD_file, ".bim")
+  LD_info <- LD_info[, c("region_id", "LD_file", "SNP_file")]
+  region_info <- LD_info[, "region_id", drop = FALSE]
+  region_info$chrom <- as.integer(gsub("\\_.*$", "", region_info$region_id))
+  region_info$start <- as.integer(gsub("\\_.*$", "",
+                                       sub("^.*?\\_", "", region_info$region_id)))
+  region_info$stop <- as.integer(sub("^.*?\\_", "",
+                                      sub("^.*?\\_", "", region_info$region_id)))
+  region_info$region_id <- paste0(region_info$chrom, "_",
+                                   region_info$start, "_",
+                                   region_info$stop)
+  region_info <- region_info[, c("chrom", "start", "stop", "region_id")]
+  if (!is.null(subset_region_ids)) {
+    region_info <- region_info[region_info$region_id %in% subset_region_ids, ]
+  }
+  return(list(LD_info = LD_info, region_info = region_info))
+}
 
 #' Function to select variants for ctwas weights input
 #' @param region_data A list of list containing weights list and snp_info list data for multiple genes/events within a single LD block region.

@@ -1768,6 +1768,78 @@ test_that("qc_regional_data: mismatched pip_cutoff_to_skip_ind length errors", {
   )
 })
 
+test_that("qc_regional_data: named pip_cutoff_to_skip_ind works with context names", {
+  region_data <- make_individual_region_data(n = 20, p = 8, n_contexts = 2, n_events = 2)
+
+  # Named vector matching context names
+  result <- pecotmr:::qc_regional_data(
+    region_data,
+    pip_cutoff_to_skip_ind = c(ctx1 = 0, ctx2 = 0),
+    qc_method = "slalom"
+  )
+  expect_type(result, "list")
+})
+
+test_that("qc_regional_data: named pip_cutoff_to_skip_ind fills missing contexts with 0", {
+  region_data <- make_individual_region_data(n = 20, p = 8, n_contexts = 3, n_events = 2)
+
+  # Only specify cutoff for ctx1 — ctx2 and ctx3 should default to 0
+  result <- pecotmr:::qc_regional_data(
+    region_data,
+    pip_cutoff_to_skip_ind = c(ctx1 = 0),
+    qc_method = "slalom"
+  )
+  expect_type(result, "list")
+})
+
+test_that("qc_regional_data: scalar pip_cutoff_to_skip_ind becomes named vector", {
+  region_data <- make_individual_region_data(n = 20, p = 8, n_contexts = 2, n_events = 2)
+
+  # This exercises the scalar -> named vector recycling path
+  result <- pecotmr:::qc_regional_data(
+    region_data,
+    pip_cutoff_to_skip_ind = 0,
+    qc_method = "slalom"
+  )
+  expect_type(result, "list")
+})
+
+test_that("qc_regional_data: pip_cutoff_to_skip_ind lookup works when X and Y have different contexts", {
+  # Simulate a case where residual_X has a context not in residual_Y
+  set.seed(303)
+  n <- 20; p <- 8; n_events <- 2
+  make_ctx <- function() {
+    X <- matrix(rnorm(n * p), n, p)
+    colnames(X) <- paste0("chr1:", seq_len(p) * 100, ":A:G")
+    Y <- matrix(rnorm(n * n_events), n, n_events)
+    colnames(Y) <- paste0("event", seq_len(n_events))
+    maf <- runif(p, 0.05, 0.45)
+    list(X = X, Y = Y, maf = maf)
+  }
+  ctx1 <- make_ctx()
+  ctx2 <- make_ctx()
+  ctx3 <- make_ctx()
+
+  # residual_X has 3 contexts, residual_Y only has 2
+  # pip_cutoff_to_skip_ind is recycled from residual_Y (length 2)
+  region_data <- list(
+    individual_data = list(
+      residual_Y = list(ctx1 = ctx1$Y, ctx2 = ctx2$Y),
+      residual_X = list(ctx1 = ctx1$X, ctx2 = ctx2$X, ctx3 = ctx3$X),
+      maf = list(ctx1 = ctx1$maf, ctx2 = ctx2$maf, ctx3 = ctx3$maf)
+    ),
+    sumstat_data = NULL
+  )
+
+  # Should not error — ctx3 in X has no pip_cutoff entry, defaults to 0
+  result <- pecotmr:::qc_regional_data(
+    region_data,
+    pip_cutoff_to_skip_ind = 0,
+    qc_method = "slalom"
+  )
+  expect_type(result, "list")
+})
+
 # ===========================================================================
 # SECTION U: colocboost_analysis_pipeline - sumstat with NA z filtering (line 252-258)
 # ===========================================================================

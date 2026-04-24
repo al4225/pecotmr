@@ -158,3 +158,139 @@ test_that("trim_ctwas_variants select_variants uses cs_min_cor to include CS var
   expect_true("chr1:1000:A:G" %in% included)
   expect_true("chr1:3000:G:A" %in% included)
 })
+
+# ===========================================================================
+#  Deprecated wrapper: ctwas_bimfile_loader
+# ===========================================================================
+
+test_that("ctwas_bimfile_loader reads .bim and returns legacy column names", {
+  bim_path <- tempfile(fileext = ".bim")
+  on.exit(unlink(bim_path), add = TRUE)
+  cat("1\tchr1:1000:A:G\t0\t1000\tA\tG\n", file = bim_path)
+  cat("1\tchr1:2000:C:T\t0\t2000\tC\tT\n", file = bim_path, append = TRUE)
+
+  expect_warning(
+    res <- ctwas_bimfile_loader(bim_path),
+    "deprecated"
+  )
+  expect_equal(colnames(res), c("chrom", "id", "GD", "pos", "A1", "A2"))
+  expect_equal(nrow(res), 2)
+  expect_equal(res$pos, c(1000, 2000))
+})
+
+test_that("ctwas_bimfile_loader accepts .bed path and resolves .bim", {
+  bim_path <- tempfile(fileext = ".bim")
+  bed_path <- sub("\\.bim$", ".bed", bim_path)
+  on.exit(unlink(c(bim_path, bed_path)), add = TRUE)
+  cat("22\trs100\t0\t50000\tA\tG\n", file = bim_path)
+
+  expect_warning(
+    res <- ctwas_bimfile_loader(bed_path),
+    "deprecated"
+  )
+  expect_equal(nrow(res), 1)
+  expect_equal(res$pos, 50000)
+})
+
+test_that("ctwas_bimfile_loader normalizes variant IDs", {
+  bim_path <- tempfile(fileext = ".bim")
+  on.exit(unlink(bim_path), add = TRUE)
+  cat("1\tchr1:1000:A:G\t0\t1000\tA\tG\n", file = bim_path)
+
+  expect_warning(
+    res <- ctwas_bimfile_loader(bim_path),
+    "deprecated"
+  )
+  # normalize_variant_id should have been applied
+  expect_equal(res$id, normalize_variant_id("chr1:1000:A:G"))
+})
+
+test_that("ctwas_bimfile_loader works with real test fixture", {
+  bim_path <- test_path("test_data", "protocol_example.genotype.bim")
+  skip_if_not(file.exists(bim_path), "Test fixture not available")
+
+  expect_warning(
+    res <- ctwas_bimfile_loader(bim_path),
+    "deprecated"
+  )
+  expect_equal(colnames(res), c("chrom", "id", "GD", "pos", "A1", "A2"))
+  expect_equal(nrow(res), 100)
+})
+
+# ===========================================================================
+#  Deprecated wrapper: get_ctwas_meta_data
+# ===========================================================================
+
+test_that("get_ctwas_meta_data reads LD metadata and returns LD_info + region_info", {
+  meta_file <- tempfile(fileext = ".tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(
+    paste("chrom", "start", "end", "path", sep = "\t"),
+    meta_file
+  )
+  cat(paste("chr1", "1000", "2000", "block1.cor.xz", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+  cat(paste("chr1", "2000", "3000", "block2.cor.xz", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+
+  expect_warning(
+    res <- get_ctwas_meta_data(meta_file),
+    "deprecated"
+  )
+  expect_true(is.list(res))
+  expect_true("LD_info" %in% names(res))
+  expect_true("region_info" %in% names(res))
+
+  expect_equal(nrow(res$LD_info), 2)
+  expect_equal(colnames(res$LD_info), c("region_id", "LD_file", "SNP_file"))
+  expect_equal(res$LD_info$region_id, c("1_1000_2000", "1_2000_3000"))
+
+  expect_equal(nrow(res$region_info), 2)
+  expect_equal(colnames(res$region_info), c("chrom", "start", "stop", "region_id"))
+  expect_equal(res$region_info$chrom, c(1L, 1L))
+  expect_equal(res$region_info$start, c(1000L, 2000L))
+  expect_equal(res$region_info$stop, c(2000L, 3000L))
+})
+
+test_that("get_ctwas_meta_data subset_region_ids filters correctly", {
+  meta_file <- tempfile(fileext = ".tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(
+    paste("chrom", "start", "end", "path", sep = "\t"),
+    meta_file
+  )
+  cat(paste("chr1", "1000", "2000", "block1.cor.xz", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+  cat(paste("chr1", "2000", "3000", "block2.cor.xz", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+  cat(paste("chr2", "5000", "6000", "block3.cor.xz", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+
+  expect_warning(
+    res <- get_ctwas_meta_data(meta_file, subset_region_ids = "1_1000_2000"),
+    "deprecated"
+  )
+  expect_equal(nrow(res$region_info), 1)
+  expect_equal(res$region_info$region_id, "1_1000_2000")
+  # LD_info is not subsetted (matches original behavior)
+  expect_equal(nrow(res$LD_info), 3)
+})
+
+test_that("get_ctwas_meta_data LD_file paths are relative to metadata directory", {
+  tmpdir <- tempdir()
+  meta_file <- file.path(tmpdir, "ld_meta.tsv")
+  on.exit(unlink(meta_file), add = TRUE)
+  writeLines(
+    paste("chrom", "start", "end", "path", sep = "\t"),
+    meta_file
+  )
+  cat(paste("chr1", "100", "200", "subdir/block.cor.xz", sep = "\t"), "\n",
+      file = meta_file, append = TRUE)
+
+  expect_warning(
+    res <- get_ctwas_meta_data(meta_file),
+    "deprecated"
+  )
+  expect_equal(res$LD_info$LD_file, file.path(tmpdir, "subdir/block.cor.xz"))
+  expect_equal(res$LD_info$SNP_file, paste0(file.path(tmpdir, "subdir/block.cor.xz"), ".bim"))
+})
