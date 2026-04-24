@@ -87,6 +87,42 @@ test_that("otters_weights with multiple methods returns all", {
   }
 })
 
+test_that("otters_weights passes correlation-scale stat fields to lassosum", {
+  p <- 5
+  n <- 100
+  z <- rnorm(p)
+  R <- diag(p)
+  sumstats <- data.frame(z = z)
+  captured <- new.env(parent = emptyenv())
+  local_mocked_bindings(
+    lassosum_rss_weights = function(stat, LD, ...) {
+      captured$lassosum_stat <- stat
+      captured$lassosum_dots <- list(...)
+      rep(0.1, nrow(LD))
+    },
+    prs_cs_weights = function(stat, LD, ...) {
+      captured$prs_cs_dots <- list(...)
+      rep(0.2, nrow(LD))
+    }
+  )
+
+  result <- otters_weights(
+    sumstats, R, n,
+    methods = list(
+      lassosum_rss = list(),
+      prs_cs = list(phi = 1e-4)
+    ),
+    p_thresholds = NULL,
+    check_ld_method = NULL
+  )
+
+  expect_equal(result$lassosum_rss, rep(0.1, p))
+  expect_equal(result$prs_cs, rep(0.2, p))
+  expect_equal(captured$lassosum_stat$cor, z / sqrt(n))
+  expect_equal(captured$lassosum_stat$z, z)
+  expect_equal(captured$lassosum_stat$b, z / sqrt(n))
+})
+
 # ---- otters_association ----
 test_that("otters_association returns correct structure", {
   set.seed(42)

@@ -90,7 +90,7 @@ otters_weights <- function(sumstats, LD, n,
 
   # Build stat object for _weights() convention
   b <- z / sqrt(n)
-  stat <- list(b = b, n = rep(n, p))
+  stat <- list(b = b, cor = b, z = z, n = rep(n, p))
 
   results <- list()
 

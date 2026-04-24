@@ -865,58 +865,128 @@ lassosum_rss <- function(bhat, LD, n,
   result
 }
 
+.lassosum_cor_from_stat <- function(stat, n, p) {
+  cor_input <- if (!is.null(stat$cor)) {
+    as.numeric(stat$cor)
+  } else if (!is.null(stat$z)) {
+    as.numeric(stat$z) / sqrt(n)
+  } else if (!is.null(stat$b)) {
+    as.numeric(stat$b)
+  } else {
+    stop("stat must contain one of 'cor', 'z', or 'b' for lassosum selection.")
+  }
+  if (length(cor_input) != p) {
+    stop("The length of lassosum input statistics (", length(cor_input),
+         ") must equal nrow(LD) (", p, ").")
+  }
+  cor_input
+}
+
+.lassosum_clamp_cor <- function(cor_input) {
+  max_abs_cor <- max(abs(cor_input), na.rm = TRUE)
+  if (is.finite(max_abs_cor) && max_abs_cor >= 1) {
+    cor_input <- cor_input / (max_abs_cor / 0.9999)
+  }
+  cor_input
+}
+
+.lassosum_first_max <- function(x) {
+  which(x == max(x, na.rm = TRUE))[1]
+}
+
+.lassosum_select_min_fbeta <- function(candidate_beta, candidate_meta) {
+  idx <- which.min(candidate_meta$fbeta)
+  list(
+    beta = candidate_beta[, idx],
+    index = idx,
+    mode = "min_fbeta"
+  )
+}
+
+.lassosum_select_ld_quadratic <- function(candidate_beta, cor_input, LD) {
+  ld_beta <- LD %*% candidate_beta
+  bxy <- as.numeric(crossprod(cor_input, candidate_beta))
+  bxxb <- colSums(candidate_beta * ld_beta)
+  scores <- rep(-Inf, length(bxy))
+  positive <- is.finite(bxxb) & bxxb > 0
+  scores[positive] <- bxy[positive] / sqrt(bxxb[positive])
+  idx <- .lassosum_first_max(scores)
+  list(
+    beta = candidate_beta[, idx],
+    index = idx,
+    mode = "ld_quadratic"
+  )
+}
+
 #' Extract weights from lassosum_rss with shrinkage grid search
 #'
 #' Searches over a grid of shrinkage parameters \code{s} (default:
 #' \code{c(0.2, 0.5, 0.9, 1.0)}, matching the original lassosum and OTTERS).
 #' For each \code{s}, the LD matrix is shrunk as \code{(1-s)*R + s*I}, then
-#' \code{lassosum_rss()} is called across the lambda path. The best
-#' \code{(s, lambda)} combination is selected by the lowest objective value.
+#' \code{lassosum_rss()} is called across the lambda path. Candidate selection
+#' defaults to the LD-only quadratic pseudovalidation score
+#' \deqn{\frac{c^T \beta}{\sqrt{\beta^T R \beta}}}
+#' evaluated on the supplied LD matrix \code{R}. This uses the same candidate
+#' beta path as \code{lassosum_rss()}, but scores each candidate directly from
+#' summary-statistics correlation \code{c} and LD, without requiring genotype.
 #'
 #' @details
-#' Model selection uses \code{min(fbeta)} (penalized objective) rather than
-#' the pseudovalidation approach from the original lassosum R package. Empirical
-#' comparison over 20 random trials (n=300, p=50, 3 causal) shows no systematic
-#' advantage for either method: pseudovalidation won 4/20, min(fbeta) won 6/20,
-#' tied 10/20. The shrinkage grid over \code{s} provides the primary regularization;
-#' lambda selection within each \code{s} has minimal impact.
+#' The original lassosum pseudovalidation can be written as an LD quadratic
+#' score after centering and standardizing the reference matrix columns by the
+#' same per-variant scale:
+#' \deqn{\mathrm{score}(\beta) = \frac{c^T \beta}{\sqrt{\beta^T R \beta}}.}
+#' This implementation therefore uses the supplied LD matrix directly for
+#' selection. \code{min(fbeta)} is retained only as an explicit debug option.
 #'
 #' @param stat A list with \code{$b} (effect sizes) and \code{$n} (per-variant sample sizes).
 #' @param LD LD correlation matrix R (single matrix, NOT pre-shrunk).
 #' @param s Numeric vector of shrinkage parameters to search over. Default:
 #'   \code{c(0.2, 0.5, 0.9, 1.0)} following Mak et al (2017) and OTTERS.
+#' @param selection Selection strategy. Default \code{"ld_quadratic"} uses
+#'   \eqn{c^T \beta / \sqrt{\beta^T R \beta}} on the supplied LD matrix.
+#'   \code{"min_fbeta"} is retained as an explicit alternative for debugging.
 #' @param ... Additional arguments passed to \code{lassosum_rss()}.
 #'
 #' @return A numeric vector of the posterior SNP coefficients at the best (s, lambda).
 #' @export
-lassosum_rss_weights <- function(stat, LD, s = c(0.2, 0.5, 0.9, 1.0), ...) {
+lassosum_rss_weights <- function(stat, LD, s = c(0.2, 0.5, 0.9, 1.0),
+                                 selection = c("ld_quadratic", "min_fbeta"),
+                                 ...) {
+  selection <- match.arg(selection)
   n <- median(stat$n)
   p <- nrow(LD)
-  best_fbeta <- Inf
-  best_beta  <- rep(0, p)
-
-  # Clamp marginal correlations to (-1, 1) as required by lassosum.
-  # This is lassosum-specific — other methods (PRS-CS, SDPR) handle
-  # their own regularization and should not be globally rescaled.
-  # Matches OTTERS shrink_factor logic (PRSmodels/lassosum.R lines 71-77).
-  bhat <- stat$b
-  max_abs_b <- max(abs(bhat))
-  if (max_abs_b >= 1) {
-    bhat <- bhat / (max_abs_b / 0.9999)
-  }
+  cor_input <- .lassosum_clamp_cor(.lassosum_cor_from_stat(stat, n = n, p = p))
+  solver_input <- cor_input * sqrt(n)
+  candidate_beta <- NULL
+  candidate_meta <- list()
 
   for (s_val in s) {
-    # Shrink LD: R_s = (1 - s) * R + s * I
     LD_s <- (1 - s_val) * LD + s_val * diag(p)
-    model <- lassosum_rss(bhat = bhat, LD = list(blk1 = LD_s), n = n, ...)
-    min_fbeta <- min(model$fbeta)
-    if (min_fbeta < best_fbeta) {
-      best_fbeta <- min_fbeta
-      best_beta  <- model$beta_est
-    }
+    model <- lassosum_rss(bhat = solver_input, LD = list(blk1 = LD_s), n = n, ...)
+    candidate_beta <- cbind(candidate_beta, model$beta)
+    candidate_meta[[length(candidate_meta) + 1L]] <- data.frame(
+      s = rep(s_val, length(model$lambda)),
+      lambda = model$lambda,
+      fbeta = model$fbeta,
+      stringsAsFactors = FALSE
+    )
+  }
+  candidate_meta <- do.call(rbind, candidate_meta)
+
+  selector_result <- if (selection == "ld_quadratic") {
+    .lassosum_select_ld_quadratic(candidate_beta, cor_input, LD)
+  } else {
+    .lassosum_select_min_fbeta(candidate_beta, candidate_meta)
   }
 
-  return(best_beta)
+  best_beta <- as.numeric(selector_result$beta)
+  attr(best_beta, "lassosum_selection") <- c(
+    mode = selector_result$mode,
+    index = selector_result$index,
+    s = candidate_meta$s[selector_result$index],
+    lambda = candidate_meta$lambda[selector_result$index]
+  )
+  best_beta
 }
 
 #' Compute Weights Using ncvreg with SCAD or MCP Penalty

@@ -75,15 +75,83 @@ test_that("lassosum_rss_weights dispatches to lassosum_rss once per s value", {
     lassosum_rss = function(bhat, LD, n, ...) {
       call_log$calls <- c(call_log$calls,
                           list(list(bhat = bhat, LD = LD, n = n)))
-      list(beta_est = rep(0.05, length(bhat)), fbeta = c(1.0, 0.5))
+      list(
+        beta = cbind(rep(0, length(bhat)), rep(0.05, length(bhat))),
+        lambda = c(0.05, 0.01),
+        fbeta = c(1.0, 0.5)
+      )
     }
   )
-  lassosum_rss_weights(stat = stat, LD = R, s = c(0.2, 0.9))
+  lassosum_rss_weights(stat = stat, LD = R, s = c(0.2, 0.9), selection = "min_fbeta")
   expect_equal(length(call_log$calls), 2L)
   expect_equal(call_log$calls[[1]]$n, 100)
   expect_equal(length(call_log$calls[[1]]$bhat), p)
   # LD should differ between calls because s is different
   expect_false(identical(call_log$calls[[1]]$LD, call_log$calls[[2]]$LD))
+})
+
+test_that("lassosum_rss_weights defaults to LD-quadratic selection", {
+  p <- 4
+  stat <- list(cor = c(0.4, 0.1, 0, 0), n = rep(100, p))
+  R <- diag(p)
+  R[1, 2] <- 0.5
+  R[2, 1] <- 0.5
+  expected <- c(1, 0, 0, 0)
+
+  local_mocked_bindings(
+    lassosum_rss = function(bhat, LD, n, ...) {
+      list(
+        beta = cbind(expected, c(1, 1, 0, 0)),
+        lambda = c(0.05, 0.01),
+        fbeta = c(5, 1)
+      )
+    }
+  )
+
+  result <- lassosum_rss_weights(stat = stat, LD = R, s = 0.5)
+  expect_equal(c(result), expected)
+  expect_equal(unname(attr(result, "lassosum_selection")["mode"]), "ld_quadratic")
+})
+
+test_that("lassosum_rss_weights uses first-max tie behavior for LD-quadratic selection", {
+  p <- 3
+  stat <- list(cor = c(0.3, 0.3, 0), n = rep(100, p))
+  R <- diag(p)
+
+  local_mocked_bindings(
+    lassosum_rss = function(bhat, LD, n, ...) {
+      list(
+        beta = cbind(c(1, 0, 0), c(0, 1, 0)),
+        lambda = c(0.05, 0.01),
+        fbeta = c(2, 1)
+      )
+    }
+  )
+
+  result <- lassosum_rss_weights(stat = stat, LD = R, s = 0.5)
+  expect_equal(c(result), c(1, 0, 0))
+  expect_equal(unname(attr(result, "lassosum_selection")["mode"]), "ld_quadratic")
+})
+
+test_that("lassosum_rss_weights still supports explicit min(fbeta)", {
+  p <- 4
+  stat <- list(cor = c(0.4, 0.1, 0, 0), n = rep(100, p))
+  R <- diag(p)
+  expected <- c(1, 1, 0, 0)
+
+  local_mocked_bindings(
+    lassosum_rss = function(bhat, LD, n, ...) {
+      list(
+        beta = cbind(c(1, 0, 0, 0), expected),
+        lambda = c(0.05, 0.01),
+        fbeta = c(5, 1)
+      )
+    }
+  )
+
+  result <- lassosum_rss_weights(stat = stat, LD = R, s = 0.5, selection = "min_fbeta")
+  expect_equal(c(result), expected)
+  expect_equal(unname(attr(result, "lassosum_selection")["mode"]), "min_fbeta")
 })
 
 test_that("bayes_{n,l,a,c,r}_weights each dispatch to bayes_alphabet_weights with correct method", {
