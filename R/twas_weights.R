@@ -456,6 +456,12 @@ twas_predict <- function(X, weights_list) {
 #' @param r2_threshold Minimum cross-validated R-squared for an individual method
 #'   to be included in the ensemble. Methods below this threshold are excluded.
 #'   Defaults to 0.01.
+#' @param ensemble_solver Character string specifying the optimization backend
+#'   for ensemble learning. One of \code{"quadprog"}, \code{"nnls"},
+#'   \code{"lbfgsb"}, or \code{"glmnet"}. Passed to
+#'   \code{\link{ensemble_weights}}. Defaults to \code{"quadprog"}.
+#' @param ensemble_alpha Elastic net mixing parameter, used only when
+#'   \code{ensemble_solver = "glmnet"}. Defaults to 1 (lasso).
 #'
 #' @return A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.
 #' @export
@@ -480,7 +486,9 @@ twas_weights_pipeline <- function(X,
                                   cv_threads = 1,
                                   cv_weight_methods = NULL,
                                   ensemble = FALSE,
-                                  r2_threshold = 0.01) {
+                                  r2_threshold = 0.01,
+                                  ensemble_solver = "quadprog",
+                                  ensemble_alpha = 1) {
   res <- list()
   st <- proc.time()
   message("Performing TWAS weights computation for univariate analysis methods ...")
@@ -572,7 +580,9 @@ twas_weights_pipeline <- function(X,
           ens_result <- ensemble_weights(
             cv_results = filtered_cv,
             Y = y,
-            twas_weight_list = filtered_weights
+            twas_weight_list = filtered_weights,
+            solver = ensemble_solver,
+            alpha = ensemble_alpha
           )
 
           # Add ensemble weights alongside individual method weights
@@ -735,6 +745,171 @@ twas_multivariate_weights_pipeline <- function(
 }
 
 
+# Solve ensemble stacking via quadprog (constrained QP with sum-to-1 and non-negativity).
+# @param P_valid Matrix of CV predictions for valid methods (n x K_valid).
+# @param y_obs Observed outcome vector (n).
+# @param K_valid Number of valid methods.
+# @return Normalized coefficient vector of length K_valid.
+# @noRd
+.solve_ensemble_quadprog <- function(P_valid, y_obs, K_valid) {
+  if (!requireNamespace("quadprog", quietly = TRUE)) {
+    stop("Package 'quadprog' is required for solver='quadprog'. ",
+         "Install with: install.packages('quadprog')")
+  }
+
+  Dmat <- crossprod(P_valid)
+  dvec <- as.vector(crossprod(P_valid, y_obs))
+  # Ridge term for numerical stability (small relative to trace)
+  Dmat <- Dmat + 1e-8 * mean(diag(Dmat)) * diag(K_valid)
+
+  # Constraint matrix: first constraint is equality (sum = 1), then K_valid
+  # non-negativity constraints.
+  Amat <- cbind(rep(1, K_valid), diag(K_valid))
+  bvec <- c(1, rep(0, K_valid))
+
+  qp_sol <- tryCatch(
+    quadprog::solve.QP(Dmat = Dmat, dvec = dvec, Amat = Amat, bvec = bvec, meq = 1),
+    error = function(e) {
+      warning("QP solver failed: ", conditionMessage(e),
+              ". Falling back to equal weights among valid methods.")
+      NULL
+    }
+  )
+
+  if (is.null(qp_sol)) {
+    return(rep(1 / K_valid, K_valid))
+  }
+
+  # Numerical cleanup: clamp to non-negative and renormalize
+  zeta_valid <- pmax(qp_sol$solution, 0)
+  zeta_sum <- sum(zeta_valid)
+  if (zeta_sum <= 0) {
+    warning("QP returned all-zero solution. Falling back to equal weights.")
+    return(rep(1 / K_valid, K_valid))
+  }
+  zeta_valid / zeta_sum
+}
+
+# Solve ensemble stacking via NNLS (non-negative least squares, then normalize).
+# This is the approach used by SuperLearner (Lawson-Hanson algorithm).
+# @param P_valid Matrix of CV predictions for valid methods (n x K_valid).
+# @param y_obs Observed outcome vector (n).
+# @param K_valid Number of valid methods.
+# @return Normalized coefficient vector of length K_valid.
+# @noRd
+.solve_ensemble_nnls <- function(P_valid, y_obs, K_valid) {
+  if (!requireNamespace("nnls", quietly = TRUE)) {
+    stop("Package 'nnls' is required for solver='nnls'. ",
+         "Install with: install.packages('nnls')")
+  }
+
+  fit <- tryCatch(
+    nnls::nnls(P_valid, y_obs),
+    error = function(e) {
+      warning("NNLS solver failed: ", conditionMessage(e),
+              ". Falling back to equal weights.")
+      NULL
+    }
+  )
+
+  if (is.null(fit)) {
+    return(rep(1 / K_valid, K_valid))
+  }
+
+  zeta_valid <- fit$x
+  zeta_sum <- sum(zeta_valid)
+  if (zeta_sum <= 0) {
+    warning("NNLS returned all-zero solution. Falling back to equal weights.")
+    return(rep(1 / K_valid, K_valid))
+  }
+  zeta_valid / zeta_sum
+}
+
+# Solve ensemble stacking via L-BFGS-B (box-constrained optimization, then normalize).
+# Uses base R optim() with analytical gradient. No extra dependencies.
+# @param P_valid Matrix of CV predictions for valid methods (n x K_valid).
+# @param y_obs Observed outcome vector (n).
+# @param K_valid Number of valid methods.
+# @return Normalized coefficient vector of length K_valid.
+# @noRd
+.solve_ensemble_lbfgsb <- function(P_valid, y_obs, K_valid) {
+  PtP <- crossprod(P_valid)
+  Pty <- as.vector(crossprod(P_valid, y_obs))
+
+  fn <- function(z) sum((y_obs - P_valid %*% z)^2)
+  gr <- function(z) as.vector(2 * (PtP %*% z - Pty))
+
+  fit <- tryCatch(
+    stats::optim(
+      par = rep(1 / K_valid, K_valid),
+      fn = fn, gr = gr,
+      method = "L-BFGS-B",
+      lower = rep(0, K_valid)
+    ),
+    error = function(e) {
+      warning("L-BFGS-B solver failed: ", conditionMessage(e),
+              ". Falling back to equal weights.")
+      NULL
+    }
+  )
+
+  if (is.null(fit)) {
+    return(rep(1 / K_valid, K_valid))
+  }
+
+  zeta_valid <- pmax(fit$par, 0)
+  zeta_sum <- sum(zeta_valid)
+  if (zeta_sum <= 0) {
+    warning("L-BFGS-B returned all-zero solution. Falling back to equal weights.")
+    return(rep(1 / K_valid, K_valid))
+  }
+  zeta_valid / zeta_sum
+}
+
+# Solve ensemble stacking via glmnet (penalized regression with non-negativity).
+# Uses cv.glmnet for automatic lambda selection. The alpha parameter controls
+# the elastic net mixing: alpha=1 is lasso (sparse), alpha=0 is ridge.
+# @param P_valid Matrix of CV predictions for valid methods (n x K_valid).
+# @param y_obs Observed outcome vector (n).
+# @param K_valid Number of valid methods.
+# @param alpha Elastic net mixing parameter (default 1 = lasso).
+# @return Normalized coefficient vector of length K_valid.
+# @noRd
+.solve_ensemble_glmnet <- function(P_valid, y_obs, K_valid, alpha = 1) {
+  if (!requireNamespace("glmnet", quietly = TRUE)) {
+    stop("Package 'glmnet' is required for solver='glmnet'. ",
+         "Install with: install.packages('glmnet')")
+  }
+
+  fit <- tryCatch(
+    glmnet::cv.glmnet(
+      x = P_valid, y = y_obs,
+      lower.limits = 0,
+      alpha = alpha,
+      intercept = FALSE
+    ),
+    error = function(e) {
+      warning("glmnet solver failed: ", conditionMessage(e),
+              ". Falling back to equal weights.")
+      NULL
+    }
+  )
+
+  if (is.null(fit)) {
+    return(rep(1 / K_valid, K_valid))
+  }
+
+  zeta_valid <- as.numeric(stats::coef(fit, s = "lambda.min"))[-1]  # drop intercept
+  zeta_valid <- pmax(zeta_valid, 0)
+  zeta_sum <- sum(zeta_valid)
+  if (zeta_sum <= 0) {
+    warning("glmnet returned all-zero solution. Falling back to equal weights.")
+    return(rep(1 / K_valid, K_valid))
+  }
+  zeta_valid / zeta_sum
+}
+
+
 #' Ensemble TWAS Weights via Stacked Regression
 #'
 #' Given cross-validated predictions from multiple TWAS weight methods, learns
@@ -764,6 +939,21 @@ twas_multivariate_weights_pipeline <- function(
 #'   of such lists (the first is used as the weight template).
 #' @param context_index Integer indicating which column of Y to use when Y is a
 #'   matrix. Default is 1 (univariate).
+#' @param solver Character string specifying the optimization backend.
+#'   One of \code{"quadprog"} (default), \code{"nnls"}, \code{"lbfgsb"}, or
+#'   \code{"glmnet"}.
+#'   \code{"quadprog"} solves a constrained QP with sum-to-1 and non-negativity
+#'   constraints. \code{"nnls"} uses non-negative least squares (Lawson-Hanson
+#'   algorithm, as in SuperLearner) and normalizes post-hoc. \code{"lbfgsb"}
+#'   uses \code{optim(method = "L-BFGS-B")} with non-negativity bounds and
+#'   normalizes post-hoc. \code{"glmnet"} uses \code{cv.glmnet} with
+#'   \code{lower.limits = 0} for penalized non-negative regression, providing
+#'   automatic method selection via regularization. All solvers fall back to
+#'   equal weights on failure.
+#' @param alpha Elastic net mixing parameter, used only when
+#'   \code{solver = "glmnet"}. \code{alpha = 1} (default) is lasso (sparse
+#'   method selection), \code{alpha = 0} is ridge, and intermediate values
+#'   give elastic net.
 #'
 #' @return A list with components:
 #' \describe{
@@ -782,10 +972,13 @@ twas_multivariate_weights_pipeline <- function(
 #' The stacked regression solves:
 #' \deqn{\min_{\zeta} \|y - P\zeta\|^2 \quad \text{s.t.} \quad \zeta_k \geq 0,\ \sum_k \zeta_k = 1}
 #' where P is the \eqn{n \times K} matrix of out-of-fold predictions from K
-#' methods. The constrained quadratic program is solved via
-#' \code{quadprog::solve.QP}. If the QP solver fails (e.g., due to numerical
-#' issues with highly collinear predictions), the function falls back to equal
-#' weights with a message.
+#' methods. Four solver backends are available: \code{"quadprog"} enforces
+#' both constraints during optimization; \code{"nnls"}, \code{"lbfgsb"}, and
+#' \code{"glmnet"} enforce non-negativity only, then normalize coefficients
+#' to sum to 1. The \code{"glmnet"} solver additionally applies
+#' regularization, which can produce sparse solutions (method selection).
+#' If any solver fails, the function falls back to equal weights with a
+#' warning.
 #'
 #' Methods whose CV predictions have zero variance (e.g., when all weights are
 #' zero) are excluded from the optimization and assigned \eqn{\zeta_k = 0}.
@@ -818,8 +1011,11 @@ twas_multivariate_weights_pipeline <- function(
 #'
 #' @export
 ensemble_weights <- function(cv_results, Y, twas_weight_list = NULL,
-                             context_index = 1) {
+                             context_index = 1,
+                             solver = c("quadprog", "nnls", "lbfgsb", "glmnet"),
+                             alpha = 1) {
   # --- Input validation ---
+  solver <- match.arg(solver)
   if (is.null(cv_results)) {
     stop("'cv_results' is required.")
   }
@@ -978,7 +1174,7 @@ ensemble_weights <- function(cv_results, Y, twas_weight_list = NULL,
          "the input data has sufficient signal.")
   }
 
-  # --- Solve the constrained QP ---
+  # --- Solve for combination coefficients ---
   if (n_valid == 1) {
     # Only one method has signal: assign it full weight
     zeta <- rep(0, K)
@@ -987,46 +1183,15 @@ ensemble_weights <- function(cv_results, Y, twas_weight_list = NULL,
     message("Only one method ('", base_names[valid_methods],
             "') has non-zero variance predictions. Assigning it full weight.")
   } else {
-    if (!requireNamespace("quadprog", quietly = TRUE)) {
-      stop("Package 'quadprog' is required for ensemble_weights. ",
-           "Install with: install.packages('quadprog')")
-    }
-
     P_valid <- P[, valid_methods, drop = FALSE]
     K_valid <- ncol(P_valid)
 
-    Dmat <- crossprod(P_valid)
-    dvec <- as.vector(crossprod(P_valid, y_obs))
-    # Ridge term for numerical stability (small relative to trace)
-    Dmat <- Dmat + 1e-8 * mean(diag(Dmat)) * diag(K_valid)
-
-    # Constraint matrix: first constraint is equality (sum = 1), then K_valid
-    # non-negativity constraints.
-    Amat <- cbind(rep(1, K_valid), diag(K_valid))
-    bvec <- c(1, rep(0, K_valid))
-
-    qp_sol <- tryCatch(
-      quadprog::solve.QP(Dmat = Dmat, dvec = dvec, Amat = Amat, bvec = bvec, meq = 1),
-      error = function(e) {
-        warning("QP solver failed: ", conditionMessage(e),
-                ". Falling back to equal weights among valid methods.")
-        NULL
-      }
+    zeta_valid <- switch(solver,
+      quadprog = .solve_ensemble_quadprog(P_valid, y_obs, K_valid),
+      nnls     = .solve_ensemble_nnls(P_valid, y_obs, K_valid),
+      lbfgsb   = .solve_ensemble_lbfgsb(P_valid, y_obs, K_valid),
+      glmnet   = .solve_ensemble_glmnet(P_valid, y_obs, K_valid, alpha = alpha)
     )
-
-    if (is.null(qp_sol)) {
-      zeta_valid <- rep(1 / K_valid, K_valid)
-    } else {
-      # Numerical cleanup: clamp to non-negative and renormalize
-      zeta_valid <- pmax(qp_sol$solution, 0)
-      zeta_sum <- sum(zeta_valid)
-      if (zeta_sum <= 0) {
-        warning("QP returned all-zero solution. Falling back to equal weights.")
-        zeta_valid <- rep(1 / K_valid, K_valid)
-      } else {
-        zeta_valid <- zeta_valid / zeta_sum
-      }
-    }
 
     zeta <- rep(0, K)
     zeta[valid_methods] <- zeta_valid

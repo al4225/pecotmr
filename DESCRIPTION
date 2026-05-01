@@ -56,6 +56,7 @@ Suggests:
     mr.mashr,
     mvsusieR,
     ncvreg,
+    nnls,
     pgenlibr,
     quadprog,
     qgg,

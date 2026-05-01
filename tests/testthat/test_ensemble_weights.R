@@ -490,3 +490,166 @@ test_that("pipeline: r2_threshold filters methods for ensemble", {
   expect_true(any(grepl("fewer than 2 methods passed", msgs_high)))
   expect_null(res_high$ensemble)
 })
+
+# ===========================================================================
+#  Solver alternatives
+# ===========================================================================
+
+for (slv in c("quadprog", "nnls", "lbfgsb", "glmnet")) {
+  test_that(paste0("ensemble_weights: solver='", slv, "' produces valid coefficients"), {
+    if (slv == "quadprog") skip_if_not_installed("quadprog")
+    if (slv == "nnls") skip_if_not_installed("nnls")
+    if (slv == "glmnet") skip_if_not_installed("glmnet")
+
+    cv <- make_cv_result(n = 100, K = 4, seed = 42)
+    res <- ensemble_weights(cv, Y = cv$.y, solver = slv)
+
+    expect_true(all(res$method_coef >= 0))
+    expect_equal(sum(res$method_coef), 1, tolerance = 1e-6)
+    expect_equal(length(res$method_coef), 4)
+  })
+
+  test_that(paste0("ensemble_weights: solver='", slv, "' assigns best method largest coef"), {
+    if (slv == "quadprog") skip_if_not_installed("quadprog")
+    if (slv == "nnls") skip_if_not_installed("nnls")
+    if (slv == "glmnet") skip_if_not_installed("glmnet")
+
+    cv <- make_cv_result(n = 200, K = 4, seed = 7,
+                          method_quality = c(0.1, 0.5, 0.8, 1.2))
+    res <- ensemble_weights(cv, Y = cv$.y, solver = slv)
+
+    expect_equal(names(which.max(res$method_coef)), "method1")
+  })
+
+  test_that(paste0("ensemble_weights: solver='", slv, "' combines weights correctly"), {
+    if (slv == "quadprog") skip_if_not_installed("quadprog")
+    if (slv == "nnls") skip_if_not_installed("nnls")
+    if (slv == "glmnet") skip_if_not_installed("glmnet")
+
+    cv <- make_cv_result(n = 100, K = 3, seed = 42)
+    wt <- make_weight_list(p = 10, method_names = cv$.method_names)
+    res <- ensemble_weights(cv, Y = cv$.y, twas_weight_list = wt, solver = slv)
+
+    expect_false(is.null(res$ensemble_twas_weights))
+
+    expected <- matrix(0, nrow = 10, ncol = 1)
+    for (k in seq_along(cv$.method_names)) {
+      m <- cv$.method_names[k]
+      expected <- expected + res$method_coef[m] * wt[[paste0(m, "_weights")]]
+    }
+    expect_equal(as.numeric(res$ensemble_twas_weights),
+                 as.numeric(expected),
+                 tolerance = 1e-10)
+  })
+}
+
+test_that("ensemble_weights: invalid solver errors", {
+  cv <- make_cv_result(n = 50, K = 3, seed = 1)
+  expect_error(ensemble_weights(cv, Y = cv$.y, solver = "bogus"),
+               "arg")
+})
+
+test_that("pipeline: ensemble_solver='nnls' works end-to-end", {
+  skip_if_not_installed("glmnet")
+  skip_if_not_installed("nnls")
+
+  set.seed(42)
+  n <- 100
+  p <- 20
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("var_", seq_len(p))
+  rownames(X) <- paste0("sample_", seq_len(n))
+
+  beta <- c(1.5, -1.0, 0.8, rep(0, p - 3))
+  y <- as.numeric(X %*% beta + rnorm(n, sd = 0.5))
+
+  msgs <- testthat::capture_messages(
+    res <- twas_weights_pipeline(
+      X, y, cv_folds = 3,
+      weight_methods = list(lasso_weights = list(), enet_weights = list()),
+      ensemble = TRUE,
+      ensemble_solver = "nnls"
+    )
+  )
+
+  expect_true(any(grepl("Computing ensemble TWAS weights", msgs)))
+  expect_true("ensemble_weights" %in% names(res$twas_weights))
+  expect_true(all(res$ensemble$method_coef >= 0))
+  expect_equal(sum(res$ensemble$method_coef), 1, tolerance = 1e-6)
+})
+
+test_that("pipeline: ensemble_solver='lbfgsb' works end-to-end", {
+  skip_if_not_installed("glmnet")
+
+  set.seed(42)
+  n <- 100
+  p <- 20
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("var_", seq_len(p))
+  rownames(X) <- paste0("sample_", seq_len(n))
+
+  beta <- c(1.5, -1.0, 0.8, rep(0, p - 3))
+  y <- as.numeric(X %*% beta + rnorm(n, sd = 0.5))
+
+  msgs <- testthat::capture_messages(
+    res <- twas_weights_pipeline(
+      X, y, cv_folds = 3,
+      weight_methods = list(lasso_weights = list(), enet_weights = list()),
+      ensemble = TRUE,
+      ensemble_solver = "lbfgsb"
+    )
+  )
+
+  expect_true(any(grepl("Computing ensemble TWAS weights", msgs)))
+  expect_true("ensemble_weights" %in% names(res$twas_weights))
+  expect_true(all(res$ensemble$method_coef >= 0))
+  expect_equal(sum(res$ensemble$method_coef), 1, tolerance = 1e-6)
+})
+
+test_that("pipeline: ensemble_solver='glmnet' works end-to-end", {
+  skip_if_not_installed("glmnet")
+
+  set.seed(42)
+  n <- 100
+  p <- 20
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("var_", seq_len(p))
+  rownames(X) <- paste0("sample_", seq_len(n))
+
+  beta <- c(1.5, -1.0, 0.8, rep(0, p - 3))
+  y <- as.numeric(X %*% beta + rnorm(n, sd = 0.5))
+
+  msgs <- testthat::capture_messages(
+    res <- twas_weights_pipeline(
+      X, y, cv_folds = 3,
+      weight_methods = list(lasso_weights = list(), enet_weights = list()),
+      ensemble = TRUE,
+      ensemble_solver = "glmnet"
+    )
+  )
+
+  expect_true(any(grepl("Computing ensemble TWAS weights", msgs)))
+  expect_true("ensemble_weights" %in% names(res$twas_weights))
+  expect_true(all(res$ensemble$method_coef >= 0))
+  expect_equal(sum(res$ensemble$method_coef), 1, tolerance = 1e-6)
+})
+
+test_that("ensemble_weights: solver='glmnet' respects alpha parameter", {
+  skip_if_not_installed("glmnet")
+
+  cv <- make_cv_result(n = 200, K = 4, seed = 42)
+
+  res_lasso <- ensemble_weights(cv, Y = cv$.y, solver = "glmnet", alpha = 1)
+  res_ridge <- ensemble_weights(cv, Y = cv$.y, solver = "glmnet", alpha = 0)
+
+  # Both should be valid
+  expect_true(all(res_lasso$method_coef >= 0))
+  expect_equal(sum(res_lasso$method_coef), 1, tolerance = 1e-6)
+  expect_true(all(res_ridge$method_coef >= 0))
+  expect_equal(sum(res_ridge$method_coef), 1, tolerance = 1e-6)
+
+  # Lasso should be at least as sparse as ridge (fewer or equal non-zero coefs)
+  n_nonzero_lasso <- sum(res_lasso$method_coef > 1e-8)
+  n_nonzero_ridge <- sum(res_ridge$method_coef > 1e-8)
+  expect_true(n_nonzero_lasso <= n_nonzero_ridge)
+})

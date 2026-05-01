@@ -56,6 +56,7 @@ requirements:
     - r-mr.mashr
     - r-mvsusier
     - r-ncvreg
+    - r-nnls
     - r-pgenlibr
     - r-purrr
     - r-qgg
@@ -99,6 +100,7 @@ requirements:
     - r-mr.mashr
     - r-mvsusier
     - r-ncvreg
+    - r-nnls
     - r-pgenlibr
     - r-purrr
     - r-qgg

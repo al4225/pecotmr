@@ -17,7 +17,9 @@ twas_weights_pipeline(
   cv_threads = 1,
   cv_weight_methods = NULL,
   ensemble = FALSE,
-  r2_threshold = 0.01
+  r2_threshold = 0.01,
+  ensemble_solver = "quadprog",
+  ensemble_alpha = 1
 )
 }
 \arguments{
@@ -44,6 +46,14 @@ methods to have been run and to pass the R-squared cutoff. Defaults to FALSE.}
 \item{r2_threshold}{Minimum cross-validated R-squared for an individual method
 to be included in the ensemble. Methods below this threshold are excluded.
 Defaults to 0.01.}
+
+\item{ensemble_solver}{Character string specifying the optimization backend
+for ensemble learning. One of \code{"quadprog"}, \code{"nnls"},
+\code{"lbfgsb"}, or \code{"glmnet"}. Passed to
+\code{\link{ensemble_weights}}. Defaults to \code{"quadprog"}.}
+
+\item{ensemble_alpha}{Elastic net mixing parameter, used only when
+\code{ensemble_solver = "glmnet"}. Defaults to 1 (lasso).}
 }
 \value{
 A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.

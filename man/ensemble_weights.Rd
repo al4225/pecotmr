@@ -4,7 +4,14 @@
 \alias{ensemble_weights}
 \title{Ensemble TWAS Weights via Stacked Regression}
 \usage{
-ensemble_weights(cv_results, Y, twas_weight_list = NULL, context_index = 1)
+ensemble_weights(
+  cv_results,
+  Y,
+  twas_weight_list = NULL,
+  context_index = 1,
+  solver = c("quadprog", "nnls", "lbfgsb", "glmnet"),
+  alpha = 1
+)
 }
 \arguments{
 \item{cv_results}{Output of \code{\link{twas_weights_cv}}, with \code{$prediction}
@@ -21,6 +28,23 @@ of such lists (the first is used as the weight template).}
 
 \item{context_index}{Integer indicating which column of Y to use when Y is a
 matrix. Default is 1 (univariate).}
+
+\item{solver}{Character string specifying the optimization backend.
+One of \code{"quadprog"} (default), \code{"nnls"}, \code{"lbfgsb"}, or
+\code{"glmnet"}.
+\code{"quadprog"} solves a constrained QP with sum-to-1 and non-negativity
+constraints. \code{"nnls"} uses non-negative least squares (Lawson-Hanson
+algorithm, as in SuperLearner) and normalizes post-hoc. \code{"lbfgsb"}
+uses \code{optim(method = "L-BFGS-B")} with non-negativity bounds and
+normalizes post-hoc. \code{"glmnet"} uses \code{cv.glmnet} with
+\code{lower.limits = 0} for penalized non-negative regression, providing
+automatic method selection via regularization. All solvers fall back to
+equal weights on failure.}
+
+\item{alpha}{Elastic net mixing parameter, used only when
+\code{solver = "glmnet"}. \code{alpha = 1} (default) is lasso (sparse
+method selection), \code{alpha = 0} is ridge, and intermediate values
+give elastic net.}
 }
 \value{
 A list with components:
@@ -58,10 +82,13 @@ coefficients.
 The stacked regression solves:
 \deqn{\min_{\zeta} \|y - P\zeta\|^2 \quad \text{s.t.} \quad \zeta_k \geq 0,\ \sum_k \zeta_k = 1}
 where P is the \eqn{n \times K} matrix of out-of-fold predictions from K
-methods. The constrained quadratic program is solved via
-\code{quadprog::solve.QP}. If the QP solver fails (e.g., due to numerical
-issues with highly collinear predictions), the function falls back to equal
-weights with a message.
+methods. Four solver backends are available: \code{"quadprog"} enforces
+both constraints during optimization; \code{"nnls"}, \code{"lbfgsb"}, and
+\code{"glmnet"} enforce non-negativity only, then normalize coefficients
+to sum to 1. The \code{"glmnet"} solver additionally applies
+regularization, which can produce sparse solutions (method selection).
+If any solver fails, the function falls back to equal weights with a
+warning.
 
 Methods whose CV predictions have zero variance (e.g., when all weights are
 zero) are excluded from the optimization and assigned \eqn{\zeta_k = 0}.
