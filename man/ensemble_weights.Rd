@@ -34,8 +34,6 @@ A list with components:
   \item{method_performance}{Named numeric vector of per-method R-squared
     computed from out-of-fold CV predictions. Preserved so users can still
     report individual method performance.}
-  \item{ensemble_performance}{Named numeric vector with \code{corr}
-    (Pearson correlation) and \code{rsq} (R-squared) for the ensemble.}
 }
 }
 \description{
@@ -82,7 +80,6 @@ ens <- ensemble_weights(
   twas_weight_list = res$twas_weights
 )
 ens$method_coef           # combination weights, sum to 1
-ens$ensemble_performance  # ensemble R-squared
 
 # Multi-dataset ensemble (e.g., CUMC1 + MIT cell types):
 ens_multi <- ensemble_weights(

@@ -451,7 +451,11 @@ twas_predict <- function(X, weights_list) {
 #' @param cv_threads The number of threads to use for parallel computation in cross-validation. Defaults to 1.
 #' @param cv_weight_methods List of methods to use for cross-validation. If NULL, uses the same methods as weight_methods.
 #' @param ensemble Logical. If TRUE and cv_folds > 1, learn ensemble combination
-#'   weights via stacked regression (SR-TWAS). Defaults to FALSE.
+#'   weights via stacked regression (SR-TWAS). Requires at least two individual
+#'   methods to have been run and to pass the R-squared cutoff. Defaults to FALSE.
+#' @param r2_threshold Minimum cross-validated R-squared for an individual method
+#'   to be included in the ensemble. Methods below this threshold are excluded.
+#'   Defaults to 0.01.
 #'
 #' @return A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.
 #' @export
@@ -475,7 +479,8 @@ twas_weights_pipeline <- function(X,
                                   max_cv_variants = -1,
                                   cv_threads = 1,
                                   cv_weight_methods = NULL,
-                                  ensemble = FALSE) {
+                                  ensemble = FALSE,
+                                  r2_threshold = 0.01) {
   res <- list()
   st <- proc.time()
   message("Performing TWAS weights computation for univariate analysis methods ...")
@@ -526,13 +531,60 @@ twas_weights_pipeline <- function(X,
     )
 
     # Ensemble learning: learn optimal method combination via stacked regression
-    if (ensemble && !is.null(res$twas_cv_result$prediction)) {
-      message("Computing ensemble TWAS weights via stacked regression ...")
-      res$ensemble <- ensemble_weights(
-        cv_results = res$twas_cv_result,
-        Y = y,
-        twas_weight_list = res$twas_weights
-      )
+    if (ensemble) {
+      n_methods <- length(cv_weight_methods)
+      if (n_methods < 2) {
+        message("Ensemble TWAS requires at least 2 weight methods to be used. ",
+                "Only ", n_methods, " method was provided. Skipping ensemble.")
+      } else if (!is.null(res$twas_cv_result$performance)) {
+        # Extract R² for each method from CV performance table
+        method_rsq <- vapply(res$twas_cv_result$performance, function(perf) {
+          perf[1, "rsq"]
+        }, numeric(1))
+        names(method_rsq) <- gsub("_performance$", "", names(method_rsq))
+
+        passing <- !is.na(method_rsq) & method_rsq >= r2_threshold
+        n_passing <- sum(passing)
+
+        if (n_passing < 2) {
+          passed_info <- paste0("  ", names(method_rsq), ": R² = ",
+                                round(method_rsq, 4),
+                                ifelse(passing, " (passed)", " (failed)"))
+          message("Ensemble TWAS could not be run because fewer than 2 methods ",
+                  "passed the R² cutoff of ", r2_threshold, ".\n",
+                  "Method R² values:\n",
+                  paste(passed_info, collapse = "\n"))
+        } else {
+          passing_base <- names(method_rsq)[passing]
+          passing_pred_names <- paste0(passing_base, "_predicted")
+          passing_weight_names <- paste0(passing_base, "_weights")
+
+          # Subset cv_results predictions to passing methods
+          filtered_cv <- res$twas_cv_result
+          filtered_cv$prediction <- filtered_cv$prediction[passing_pred_names]
+
+          # Subset twas_weights to passing methods
+          filtered_weights <- res$twas_weights[passing_weight_names]
+
+          message("Computing ensemble TWAS weights via stacked regression ",
+                  "using ", n_passing, " methods: ",
+                  paste(passing_base, collapse = ", "), " ...")
+          ens_result <- ensemble_weights(
+            cv_results = filtered_cv,
+            Y = y,
+            twas_weight_list = filtered_weights
+          )
+
+          # Add ensemble weights alongside individual method weights
+          if (!is.null(ens_result$ensemble_twas_weights)) {
+            res$twas_weights$ensemble_weights <- ens_result$ensemble_twas_weights
+            ens_wt <- ens_result$ensemble_twas_weights
+            if (!is.matrix(ens_wt)) ens_wt <- matrix(ens_wt, ncol = 1)
+            res$twas_predictions$ensemble_predicted <- X %*% ens_wt
+          }
+          res$ensemble <- ens_result
+        }
+      }
     }
   }
   res$total_time_elapsed <- proc.time() - st
@@ -724,8 +776,6 @@ twas_multivariate_weights_pipeline <- function(
 #'   \item{method_performance}{Named numeric vector of per-method R-squared
 #'     computed from out-of-fold CV predictions. Preserved so users can still
 #'     report individual method performance.}
-#'   \item{ensemble_performance}{Named numeric vector with \code{corr}
-#'     (Pearson correlation) and \code{rsq} (R-squared) for the ensemble.}
 #' }
 #'
 #' @details
@@ -757,7 +807,6 @@ twas_multivariate_weights_pipeline <- function(
 #'   twas_weight_list = res$twas_weights
 #' )
 #' ens$method_coef           # combination weights, sum to 1
-#' ens$ensemble_performance  # ensemble R-squared
 #'
 #' # Multi-dataset ensemble (e.g., CUMC1 + MIT cell types):
 #' ens_multi <- ensemble_weights(
@@ -985,12 +1034,6 @@ ensemble_weights <- function(cv_results, Y, twas_weight_list = NULL,
   }
 
   # --- Performance metrics ---
-  ensemble_pred <- as.numeric(P %*% zeta)
-  ensemble_corr <- if (stats::sd(ensemble_pred) > 0) {
-    stats::cor(y_obs, ensemble_pred)
-  } else NA_real_
-  ensemble_rsq <- if (!is.na(ensemble_corr)) ensemble_corr^2 else NA_real_
-
   method_rsq <- setNames(vapply(seq_len(K), function(k) {
     if (method_sds[k] > 0) stats::cor(y_obs, P[, k])^2 else NA_real_
   }, numeric(1)), base_names)
@@ -1044,7 +1087,6 @@ ensemble_weights <- function(cv_results, Y, twas_weight_list = NULL,
   list(
     method_coef = zeta,
     ensemble_twas_weights = ensemble_twas_wt,
-    method_performance = method_rsq,
-    ensemble_performance = c(corr = ensemble_corr, rsq = ensemble_rsq)
+    method_performance = method_rsq
   )
 }

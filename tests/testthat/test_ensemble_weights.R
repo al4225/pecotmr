@@ -131,16 +131,12 @@ test_that("ensemble_weights: best method receives the largest coefficient", {
   expect_equal(names(which.max(res$method_coef)), "method1")
 })
 
-test_that("ensemble_weights: ensemble R^2 >= best single-method R^2 (or close)", {
+test_that("ensemble_weights: does not return ensemble_performance (in-sample R^2 omitted)", {
   cv <- make_cv_result(n = 300, K = 5, seed = 13)
   res <- ensemble_weights(cv, Y = cv$.y)
 
-  best_method_r2 <- max(res$method_performance, na.rm = TRUE)
-  ensemble_r2 <- res$ensemble_performance["rsq"]
-
-  # Stacked regression is constrained (sum=1, non-neg), so it can't always
-  # beat the best single method, but should be very close.
-  expect_true(ensemble_r2 >= best_method_r2 - 0.01)
+  expect_null(res$ensemble_performance)
+  expect_false("ensemble_performance" %in% names(res))
 })
 
 test_that("ensemble_weights: per-method R^2 values are sensible (between 0 and 1)", {
@@ -179,7 +175,6 @@ test_that("ensemble_weights: aligns Y and predictions by sample name", {
 
   # Results should be identical regardless of Y order
   expect_equal(res_aligned$method_coef, res_original$method_coef, tolerance = 1e-10)
-  expect_equal(res_aligned$ensemble_performance, res_original$ensemble_performance, tolerance = 1e-10)
 })
 
 test_that("ensemble_weights: aligns Y matrix and predictions by sample name", {
@@ -332,5 +327,166 @@ test_that("ensemble_weights: end-to-end with twas_weights_cv output", {
   expect_equal(sum(res$method_coef), 1, tolerance = 1e-6)
   expect_true(all(res$method_coef >= 0))
   expect_equal(names(res$method_coef), c("lasso", "enet"))
-  expect_true(res$ensemble_performance["rsq"] > 0)
+  expect_null(res$ensemble_performance)
+})
+
+# ===========================================================================
+#  twas_weights_pipeline ensemble integration
+# ===========================================================================
+
+test_that("pipeline: ensemble=TRUE with only 1 method prints skip message", {
+  skip_if_not_installed("glmnet")
+
+  set.seed(42)
+  n <- 100
+  p <- 20
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("var_", seq_len(p))
+  rownames(X) <- paste0("sample_", seq_len(n))
+
+  beta <- c(1.5, -1.0, 0.8, rep(0, p - 3))
+  y <- as.numeric(X %*% beta + rnorm(n, sd = 0.5))
+
+  msgs <- testthat::capture_messages(
+    res <- twas_weights_pipeline(
+      X, y, cv_folds = 3,
+      weight_methods = list(lasso_weights = list()),
+      ensemble = TRUE
+    )
+  )
+
+  expect_true(any(grepl("at least 2 weight methods", msgs)))
+
+  # No ensemble result should be present
+  expect_null(res$ensemble)
+  expect_null(res$twas_weights$ensemble_weights)
+})
+
+test_that("pipeline: ensemble=TRUE skips when methods fail R^2 cutoff", {
+  skip_if_not_installed("glmnet")
+
+  set.seed(42)
+  n <- 100
+  p <- 20
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("var_", seq_len(p))
+  rownames(X) <- paste0("sample_", seq_len(n))
+
+  # Use signal so methods produce non-zero weights, but set threshold very high
+  beta <- c(1.5, -1.0, 0.8, rep(0, p - 3))
+  y <- as.numeric(X %*% beta + rnorm(n, sd = 0.5))
+
+  msgs <- testthat::capture_messages(
+    res <- twas_weights_pipeline(
+      X, y, cv_folds = 3,
+      weight_methods = list(lasso_weights = list(), enet_weights = list()),
+      ensemble = TRUE,
+      r2_threshold = 0.99  # impossibly high threshold
+    )
+  )
+
+  expect_true(any(grepl("fewer than 2 methods passed the R.*cutoff", msgs)))
+  expect_null(res$ensemble)
+  expect_null(res$twas_weights$ensemble_weights)
+})
+
+test_that("pipeline: ensemble=TRUE succeeds and adds ensemble_weights", {
+  skip_if_not_installed("glmnet")
+
+  set.seed(42)
+  n <- 100
+  p <- 20
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("var_", seq_len(p))
+  rownames(X) <- paste0("sample_", seq_len(n))
+
+  beta <- c(1.5, -1.0, 0.8, rep(0, p - 3))
+  y <- as.numeric(X %*% beta + rnorm(n, sd = 0.5))
+
+  msgs <- testthat::capture_messages(
+    res <- twas_weights_pipeline(
+      X, y, cv_folds = 3,
+      weight_methods = list(lasso_weights = list(), enet_weights = list()),
+      ensemble = TRUE
+    )
+  )
+
+  expect_true(any(grepl("Computing ensemble TWAS weights", msgs)))
+
+  # Ensemble weights added alongside individual methods
+  expect_true("ensemble_weights" %in% names(res$twas_weights))
+  expect_true("lasso_weights" %in% names(res$twas_weights))
+  expect_true("enet_weights" %in% names(res$twas_weights))
+
+  # Ensemble predictions added
+  expect_true("ensemble_predicted" %in% names(res$twas_predictions))
+
+  # Ensemble result metadata present
+  expect_false(is.null(res$ensemble))
+  expect_true(all(res$ensemble$method_coef >= 0))
+  expect_equal(sum(res$ensemble$method_coef), 1, tolerance = 1e-6)
+
+  # Ensemble weights should have same length as individual weights
+  expect_equal(length(res$twas_weights$ensemble_weights),
+               length(res$twas_weights$lasso_weights))
+})
+
+test_that("pipeline: ensemble=FALSE does not run ensemble", {
+  skip_if_not_installed("glmnet")
+
+  set.seed(42)
+  n <- 100
+  p <- 20
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("var_", seq_len(p))
+  rownames(X) <- paste0("sample_", seq_len(n))
+
+  beta <- c(1.5, -1.0, 0.8, rep(0, p - 3))
+  y <- as.numeric(X %*% beta + rnorm(n, sd = 0.5))
+
+  res <- suppressMessages(twas_weights_pipeline(
+    X, y, cv_folds = 3,
+    weight_methods = list(lasso_weights = list(), enet_weights = list()),
+    ensemble = FALSE
+  ))
+
+  expect_null(res$ensemble)
+  expect_null(res$twas_weights$ensemble_weights)
+})
+
+test_that("pipeline: r2_threshold filters methods for ensemble", {
+  skip_if_not_installed("glmnet")
+
+  set.seed(42)
+  n <- 100
+  p <- 20
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("var_", seq_len(p))
+  rownames(X) <- paste0("sample_", seq_len(n))
+
+  beta <- c(1.5, -1.0, 0.8, rep(0, p - 3))
+  y <- as.numeric(X %*% beta + rnorm(n, sd = 0.5))
+
+  # Run with very low threshold — both methods should pass
+  msgs_low <- testthat::capture_messages(
+    res_low <- twas_weights_pipeline(
+      X, y, cv_folds = 3,
+      weight_methods = list(lasso_weights = list(), enet_weights = list()),
+      ensemble = TRUE,
+      r2_threshold = 0.001
+    )
+  )
+  expect_false(is.null(res_low$ensemble))
+
+  # Run with very high threshold — neither should pass
+  msgs_high <- testthat::capture_messages(
+    res_high <- twas_weights_pipeline(
+      X, y, cv_folds = 3,
+      weight_methods = list(lasso_weights = list(), enet_weights = list()),
+      ensemble = TRUE,
+      r2_threshold = 0.99
+    )
+  )
+  expect_true(any(grepl("fewer than 2 methods passed", msgs_high)))
+  expect_null(res_high$ensemble)
 })

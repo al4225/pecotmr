@@ -16,7 +16,8 @@ twas_weights_pipeline(
   max_cv_variants = -1,
   cv_threads = 1,
   cv_weight_methods = NULL,
-  ensemble = FALSE
+  ensemble = FALSE,
+  r2_threshold = 0.01
 )
 }
 \arguments{
@@ -37,7 +38,12 @@ twas_weights_pipeline(
 \item{cv_weight_methods}{List of methods to use for cross-validation. If NULL, uses the same methods as weight_methods.}
 
 \item{ensemble}{Logical. If TRUE and cv_folds > 1, learn ensemble combination
-weights via stacked regression (SR-TWAS). Defaults to FALSE.}
+weights via stacked regression (SR-TWAS). Requires at least two individual
+methods to have been run and to pass the R-squared cutoff. Defaults to FALSE.}
+
+\item{r2_threshold}{Minimum cross-validated R-squared for an individual method
+to be included in the ensemble. Methods below this threshold are excluded.
+Defaults to 0.01.}
 }
 \value{
 A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.
