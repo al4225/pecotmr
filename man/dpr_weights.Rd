@@ -2,9 +2,18 @@
 % Please edit documentation in R/regularized_regression.R
 \name{dpr_weights}
 \alias{dpr_weights}
+\alias{dpr_vb_weights}
+\alias{dpr_gibbs_weights}
+\alias{dpr_adaptive_gibbs_weights}
 \title{Compute Weights Using Dirichlet Process Regression (RcppDPR)}
 \usage{
 dpr_weights(X, y, fitting_method = "VB", ...)
+
+dpr_vb_weights(X, y, ...)
+
+dpr_gibbs_weights(X, y, ...)
+
+dpr_adaptive_gibbs_weights(X, y, ...)
 }
 \arguments{
 \item{X}{A numeric matrix of predictors.}
