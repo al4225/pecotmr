@@ -10,14 +10,12 @@ twas_weights_pipeline(
   susie_fit = NULL,
   cv_folds = 5,
   sample_partition = NULL,
-  weight_methods = list(enet_weights = list(), lasso_weights = list(), bayes_r_weights =
-    list(), bayes_l_weights = list(), mrash_weights = list(init_prior_sd = TRUE, max.iter
-    = 100), susie_weights = list(refine = FALSE, init_L = 5, max_L = 20)),
+  weight_methods = "default",
   max_cv_variants = -1,
   cv_threads = 1,
   cv_weight_methods = NULL,
   ensemble = FALSE,
-  r2_threshold = 0.01,
+  ensemble_r2_threshold = 0.01,
   ensemble_solver = "quadprog",
   ensemble_alpha = 1
 )
@@ -43,7 +41,7 @@ twas_weights_pipeline(
 weights via stacked regression (SR-TWAS). Requires at least two individual
 methods to have been run and to pass the R-squared cutoff. Defaults to FALSE.}
 
-\item{r2_threshold}{Minimum cross-validated R-squared for an individual method
+\item{ensemble_r2_threshold}{Minimum cross-validated R-squared for an individual method
 to be included in the ensemble. Methods below this threshold are excluded.
 Defaults to 0.01.}
 

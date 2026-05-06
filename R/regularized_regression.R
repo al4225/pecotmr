@@ -1208,3 +1208,15 @@ dpr_weights <- function(X, y, fitting_method = "VB", ...) {
   eff.wgt[keep] <- as.numeric(fit$beta + fit$alpha)
   return(eff.wgt)
 }
+
+#' @rdname dpr_weights
+#' @export
+dpr_vb_weights <- function(X, y, ...) dpr_weights(X, y, fitting_method = "VB", ...)
+
+#' @rdname dpr_weights
+#' @export
+dpr_gibbs_weights <- function(X, y, ...) dpr_weights(X, y, fitting_method = "Gibbs", ...)
+
+#' @rdname dpr_weights
+#' @export
+dpr_adaptive_gibbs_weights <- function(X, y, ...) dpr_weights(X, y, fitting_method = "Adaptive_Gibbs", ...)

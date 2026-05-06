@@ -381,7 +381,7 @@ test_that("pipeline: ensemble=TRUE skips when methods fail R^2 cutoff", {
       X, y, cv_folds = 3,
       weight_methods = list(lasso_weights = list(), enet_weights = list()),
       ensemble = TRUE,
-      r2_threshold = 0.99  # impossibly high threshold
+      ensemble_r2_threshold = 0.99  # impossibly high threshold
     )
   )
 
@@ -454,7 +454,7 @@ test_that("pipeline: ensemble=FALSE does not run ensemble", {
   expect_null(res$twas_weights$ensemble_weights)
 })
 
-test_that("pipeline: r2_threshold filters methods for ensemble", {
+test_that("pipeline: ensemble_r2_threshold filters methods for ensemble", {
   skip_if_not_installed("glmnet")
 
   set.seed(42)
@@ -473,7 +473,7 @@ test_that("pipeline: r2_threshold filters methods for ensemble", {
       X, y, cv_folds = 3,
       weight_methods = list(lasso_weights = list(), enet_weights = list()),
       ensemble = TRUE,
-      r2_threshold = 0.001
+      ensemble_r2_threshold = 0.001
     )
   )
   expect_false(is.null(res_low$ensemble))
@@ -484,7 +484,7 @@ test_that("pipeline: r2_threshold filters methods for ensemble", {
       X, y, cv_folds = 3,
       weight_methods = list(lasso_weights = list(), enet_weights = list()),
       ensemble = TRUE,
-      r2_threshold = 0.99
+      ensemble_r2_threshold = 0.99
     )
   )
   expect_true(any(grepl("fewer than 2 methods passed", msgs_high)))

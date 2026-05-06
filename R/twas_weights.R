@@ -1,3 +1,68 @@
+# Map short method names and presets to weight_methods lists.
+# @param methods A character vector of short method names, or a preset string
+#   ("default" or "fast_default").
+# @return A named list suitable for the weight_methods parameter.
+# @noRd
+.twas_method_lookup <- function(methods) {
+  method_map <- list(
+    susie = list(fn = "susie_weights", args = list(refine = FALSE, init_L = 5, max_L = 20)),
+    susie_ash = list(fn = "susie_ash_weights", args = list()),
+    susie_inf = list(fn = "susie_inf_weights", args = list()),
+    mrash = list(fn = "mrash_weights", args = list(init_prior_sd = TRUE, max.iter = 100)),
+    enet = list(fn = "enet_weights", args = list()),
+    lasso = list(fn = "lasso_weights", args = list()),
+    bayes_r = list(fn = "bayes_r_weights", args = list()),
+    bayes_l = list(fn = "bayes_l_weights", args = list()),
+    bayes_a = list(fn = "bayes_a_weights", args = list()),
+    bayes_b = list(fn = "bayes_b_weights", args = list()),
+    bayes_c = list(fn = "bayes_c_weights", args = list()),
+    bayes_n = list(fn = "bayes_n_weights", args = list()),
+    b_lasso = list(fn = "b_lasso_weights", args = list()),
+    dpr_vb = list(fn = "dpr_vb_weights", args = list()),
+    dpr_gibbs = list(fn = "dpr_gibbs_weights", args = list()),
+    dpr_adaptive_gibbs = list(fn = "dpr_adaptive_gibbs_weights", args = list()),
+    scad = list(fn = "scad_weights", args = list()),
+    mcp = list(fn = "mcp_weights", args = list()),
+    l0learn = list(fn = "l0learn_weights", args = list()),
+    mvsusie = list(fn = "mvsusie_weights", args = list()),
+    mrmash = list(fn = "mrmash_weights", args = list())
+  )
+
+  # Handle presets
+  if (length(methods) == 1) {
+    if (methods == "fast_default") {
+      methods <- c("susie", "mrash", "enet", "lasso")
+    } else if (methods == "default") {
+      methods <- c("susie", "mrash", "enet", "lasso", "bayes_r", "dpr_gibbs")
+    }
+  }
+
+  # Build reverse map: function name -> short name, so full names are accepted too
+  fn_to_short <- setNames(
+    names(method_map),
+    vapply(method_map, function(x) x$fn, character(1))
+  )
+  # Normalize any full function names to short names
+  methods <- vapply(methods, function(m) {
+    if (m %in% names(fn_to_short)) fn_to_short[[m]] else m
+  }, character(1), USE.NAMES = FALSE)
+
+  unknown <- setdiff(methods, names(method_map))
+  if (length(unknown) > 0) {
+    stop(
+      "Unknown TWAS method(s): ", paste(unknown, collapse = ", "),
+      ". Available methods: ", paste(names(method_map), collapse = ", ")
+    )
+  }
+
+  result <- list()
+  for (m in methods) {
+    entry <- method_map[[m]]
+    result[[entry$fn]] <- entry$args
+  }
+  result
+}
+
 # Identify non-zero-variance columns of X. Returns a logical vector.
 #' @importFrom matrixStats colSds
 #' @noRd
@@ -131,7 +196,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
   }
 
   if (is.character(weight_methods)) {
-    weight_methods <- lapply(setNames(nm = weight_methods), function(x) list())
+    weight_methods <- .twas_method_lookup(weight_methods)
   }
 
   if (!exists(".Random.seed")) {
@@ -355,7 +420,7 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
   }
 
   if (is.character(weight_methods)) {
-    weight_methods <- lapply(setNames(nm = weight_methods), function(x) list())
+    weight_methods <- .twas_method_lookup(weight_methods)
   }
 
   # Determine number of cores to use
@@ -453,7 +518,7 @@ twas_predict <- function(X, weights_list) {
 #' @param ensemble Logical. If TRUE and cv_folds > 1, learn ensemble combination
 #'   weights via stacked regression (SR-TWAS). Requires at least two individual
 #'   methods to have been run and to pass the R-squared cutoff. Defaults to FALSE.
-#' @param r2_threshold Minimum cross-validated R-squared for an individual method
+#' @param ensemble_r2_threshold Minimum cross-validated R-squared for an individual method
 #'   to be included in the ensemble. Methods below this threshold are excluded.
 #'   Defaults to 0.01.
 #' @param ensemble_solver Character string specifying the optimization backend
@@ -474,21 +539,18 @@ twas_weights_pipeline <- function(X,
                                   susie_fit = NULL,
                                   cv_folds = 5,
                                   sample_partition = NULL,
-                                  weight_methods = list(
-                                    enet_weights = list(),
-                                    lasso_weights = list(),
-                                    bayes_r_weights = list(),
-                                    bayes_l_weights = list(),
-                                    mrash_weights = list(init_prior_sd = TRUE, max.iter = 100),
-                                    susie_weights = list(refine = FALSE, init_L = 5, max_L = 20)
-                                  ),
+                                  weight_methods = "default",
                                   max_cv_variants = -1,
                                   cv_threads = 1,
                                   cv_weight_methods = NULL,
                                   ensemble = FALSE,
-                                  r2_threshold = 0.01,
+                                  ensemble_r2_threshold = 0.01,
                                   ensemble_solver = "quadprog",
                                   ensemble_alpha = 1) {
+  if (is.character(weight_methods)) {
+    weight_methods <- .twas_method_lookup(weight_methods)
+  }
+
   res <- list()
   st <- proc.time()
   message("Performing TWAS weights computation for univariate analysis methods ...")
@@ -551,7 +613,7 @@ twas_weights_pipeline <- function(X,
         }, numeric(1))
         names(method_rsq) <- gsub("_performance$", "", names(method_rsq))
 
-        passing <- !is.na(method_rsq) & method_rsq >= r2_threshold
+        passing <- !is.na(method_rsq) & method_rsq >= ensemble_r2_threshold
         n_passing <- sum(passing)
 
         if (n_passing < 2) {
@@ -559,7 +621,7 @@ twas_weights_pipeline <- function(X,
                                 round(method_rsq, 4),
                                 ifelse(passing, " (passed)", " (failed)"))
           message("Ensemble TWAS could not be run because fewer than 2 methods ",
-                  "passed the R² cutoff of ", r2_threshold, ".\n",
+                  "passed the R² cutoff of ", ensemble_r2_threshold, ".\n",
                   "Method R² values:\n",
                   paste(passed_info, collapse = "\n"))
         } else {
@@ -840,7 +902,7 @@ twas_multivariate_weights_pipeline <- function(
   gr <- function(z) as.vector(2 * (PtP %*% z - Pty))
 
   fit <- tryCatch(
-    stats::optim(
+    optim(
       par = rep(1 / K_valid, K_valid),
       fn = fn, gr = gr,
       method = "L-BFGS-B",
@@ -899,7 +961,7 @@ twas_multivariate_weights_pipeline <- function(
     return(rep(1 / K_valid, K_valid))
   }
 
-  zeta_valid <- as.numeric(stats::coef(fit, s = "lambda.min"))[-1]  # drop intercept
+  zeta_valid <- as.numeric(coef(fit, s = "lambda.min"))[-1]  # drop intercept
   zeta_valid <- pmax(zeta_valid, 0)
   zeta_sum <- sum(zeta_valid)
   if (zeta_sum <= 0) {
@@ -1009,6 +1071,7 @@ twas_multivariate_weights_pipeline <- function(
 #' )
 #' }
 #'
+#' @importFrom stats optim coef complete.cases sd cor
 #' @export
 ensemble_weights <- function(cv_results, Y, twas_weight_list = NULL,
                              context_index = 1,
@@ -1151,7 +1214,7 @@ ensemble_weights <- function(cv_results, Y, twas_weight_list = NULL,
   y_obs <- unlist(y_list)           # (n_total)
 
   # Remove rows with any NA (in P or y)
-  complete <- stats::complete.cases(P, y_obs)
+  complete <- complete.cases(P, y_obs)
   n_dropped <- sum(!complete)
   if (n_dropped > 0) {
     message("Dropping ", n_dropped, " observation(s) with NA predictions or outcomes.")
@@ -1164,7 +1227,7 @@ ensemble_weights <- function(cv_results, Y, twas_weight_list = NULL,
   y_obs <- y_obs[complete]
 
   # --- Identify methods with non-zero variance predictions ---
-  method_sds <- apply(P, 2, stats::sd)
+  method_sds <- apply(P, 2, sd)
   valid_methods <- method_sds > .Machine$double.eps
   n_valid <- sum(valid_methods)
 
@@ -1200,7 +1263,7 @@ ensemble_weights <- function(cv_results, Y, twas_weight_list = NULL,
 
   # --- Performance metrics ---
   method_rsq <- setNames(vapply(seq_len(K), function(k) {
-    if (method_sds[k] > 0) stats::cor(y_obs, P[, k])^2 else NA_real_
+    if (method_sds[k] > 0) cor(y_obs, P[, k])^2 else NA_real_
   }, numeric(1)), base_names)
 
   # --- Build ensemble TWAS weight vector (uses first dataset's weights) ---
