@@ -10,12 +10,14 @@ twas_weights_pipeline(
   susie_fit = NULL,
   cv_folds = 5,
   sample_partition = NULL,
-  weight_methods = list(enet_weights = list(), lasso_weights = list(), bayes_r_weights =
-    list(), bayes_l_weights = list(), mrash_weights = list(init_prior_sd = TRUE, max.iter
-    = 100), susie_weights = list(refine = FALSE, init_L = 5, max_L = 20)),
+  weight_methods = "default",
   max_cv_variants = -1,
   cv_threads = 1,
-  cv_weight_methods = NULL
+  cv_weight_methods = NULL,
+  ensemble = FALSE,
+  ensemble_r2_threshold = 0.01,
+  ensemble_solver = "quadprog",
+  ensemble_alpha = 1
 )
 }
 \arguments{
@@ -34,6 +36,22 @@ twas_weights_pipeline(
 \item{cv_threads}{The number of threads to use for parallel computation in cross-validation. Defaults to 1.}
 
 \item{cv_weight_methods}{List of methods to use for cross-validation. If NULL, uses the same methods as weight_methods.}
+
+\item{ensemble}{Logical. If TRUE and cv_folds > 1, learn ensemble combination
+weights via stacked regression (SR-TWAS). Requires at least two individual
+methods to have been run and to pass the R-squared cutoff. Defaults to FALSE.}
+
+\item{ensemble_r2_threshold}{Minimum cross-validated R-squared for an individual method
+to be included in the ensemble. Methods below this threshold are excluded.
+Defaults to 0.01.}
+
+\item{ensemble_solver}{Character string specifying the optimization backend
+for ensemble learning. One of \code{"quadprog"}, \code{"nnls"},
+\code{"lbfgsb"}, or \code{"glmnet"}. Passed to
+\code{\link{ensemble_weights}}. Defaults to \code{"quadprog"}.}
+
+\item{ensemble_alpha}{Elastic net mixing parameter, used only when
+\code{ensemble_solver = "glmnet"}. Defaults to 1 (lasso).}
 }
 \value{
 A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.

@@ -28,6 +28,64 @@ make_data <- function(n = 50, p = 10, seed = 42, add_zero_var_col = FALSE) {
 
 # ===========================================================================
 #
+#  .twas_method_lookup
+#
+# ===========================================================================
+
+test_that(".twas_method_lookup: 'default' preset returns 6 methods", {
+  result <- pecotmr:::.twas_method_lookup("default")
+  expected_names <- c(
+    "susie_weights", "mrash_weights", "enet_weights",
+    "lasso_weights", "bayes_r_weights", "dpr_gibbs_weights"
+  )
+  expect_equal(sort(names(result)), sort(expected_names))
+})
+
+test_that(".twas_method_lookup: 'fast_default' preset returns 4 methods", {
+  result <- pecotmr:::.twas_method_lookup("fast_default")
+  expected_names <- c(
+    "susie_weights", "mrash_weights", "enet_weights", "lasso_weights"
+  )
+  expect_equal(sort(names(result)), sort(expected_names))
+})
+
+test_that(".twas_method_lookup: custom vector of short names", {
+  result <- pecotmr:::.twas_method_lookup(c("susie", "enet", "dpr_vb"))
+  expect_equal(sort(names(result)), sort(c("susie_weights", "enet_weights", "dpr_vb_weights")))
+})
+
+test_that(".twas_method_lookup: unknown method produces error", {
+  expect_error(
+    pecotmr:::.twas_method_lookup(c("susie", "nonexistent_method")),
+    "Unknown TWAS method"
+  )
+})
+
+test_that(".twas_method_lookup: default args are set for susie and mrash", {
+  result <- pecotmr:::.twas_method_lookup("fast_default")
+  expect_equal(result$susie_weights$refine, FALSE)
+  expect_equal(result$susie_weights$init_L, 5)
+  expect_equal(result$susie_weights$max_L, 20)
+  expect_equal(result$mrash_weights$init_prior_sd, TRUE)
+  expect_equal(result$mrash_weights$max.iter, 100)
+})
+
+test_that(".twas_method_lookup: methods with no special args get empty list", {
+  result <- pecotmr:::.twas_method_lookup(c("enet", "lasso"))
+  expect_equal(result$enet_weights, list())
+  expect_equal(result$lasso_weights, list())
+})
+
+test_that(".twas_method_lookup: all DPR variants can coexist", {
+  result <- pecotmr:::.twas_method_lookup(c("dpr_vb", "dpr_gibbs", "dpr_adaptive_gibbs"))
+  expect_equal(
+    sort(names(result)),
+    sort(c("dpr_vb_weights", "dpr_gibbs_weights", "dpr_adaptive_gibbs_weights"))
+  )
+})
+
+# ===========================================================================
+#
 #  twas_predict
 #
 # ===========================================================================
@@ -168,9 +226,8 @@ test_that("twas_weights: character weight_methods input is accepted", {
   local_mocked_bindings(
     lasso_weights = function(X, y, ...) rep(0, ncol(X))
   )
-  # Character vector should be converted internally to named list
-
-  result <- twas_weights(d$X, d$Y, weight_methods = c("lasso_weights"))
+  # Short name should be resolved via .twas_method_lookup
+  result <- twas_weights(d$X, d$Y, weight_methods = c("lasso"))
   expect_true(is.list(result))
   expect_equal(names(result), "lasso_weights")
 })
@@ -359,7 +416,7 @@ test_that("twas_weights_cv: character weight_methods are accepted", {
   set.seed(42)
   result <- twas_weights_cv(
     d$X, d$Y, fold = 2,
-    weight_methods = c("lasso_weights")
+    weight_methods = c("lasso")
   )
   expect_true(is.list(result))
   expect_true("prediction" %in% names(result))
@@ -673,7 +730,7 @@ test_that("twas_weights_pipeline: returns list with expected structure (mocked)"
     enet_weights  = function(X, y, ...) rep(0.1, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0.2, ncol(X)),
     bayes_r_weights = function(X, y, ...) rep(0, ncol(X)),
-    bayes_l_weights = function(X, y, ...) rep(0, ncol(X)),
+    dpr_gibbs_weights = function(X, y, ...) rep(0, ncol(X)),
     mrash_weights = function(X, y, ...) rep(0, ncol(X)),
     susie_weights = function(X, y, ...) rep(0, ncol(X))
   )
@@ -701,7 +758,7 @@ test_that("twas_weights_pipeline: twas_weights contains all default methods", {
     enet_weights  = function(X, y, ...) rep(0.1, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0.2, ncol(X)),
     bayes_r_weights = function(X, y, ...) rep(0, ncol(X)),
-    bayes_l_weights = function(X, y, ...) rep(0, ncol(X)),
+    dpr_gibbs_weights = function(X, y, ...) rep(0, ncol(X)),
     mrash_weights = function(X, y, ...) rep(0, ncol(X)),
     susie_weights = function(X, y, ...) rep(0, ncol(X))
   )
@@ -710,7 +767,7 @@ test_that("twas_weights_pipeline: twas_weights contains all default methods", {
 
   expected_methods <- c(
     "enet_weights", "lasso_weights", "bayes_r_weights",
-    "bayes_l_weights", "mrash_weights", "susie_weights"
+    "dpr_gibbs_weights", "mrash_weights", "susie_weights"
   )
   expect_true(all(expected_methods %in% names(result$twas_weights)))
 })
@@ -723,7 +780,7 @@ test_that("twas_weights_pipeline: predictions have _predicted suffix", {
     enet_weights  = function(X, y, ...) rep(0, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0, ncol(X)),
     bayes_r_weights = function(X, y, ...) rep(0, ncol(X)),
-    bayes_l_weights = function(X, y, ...) rep(0, ncol(X)),
+    dpr_gibbs_weights = function(X, y, ...) rep(0, ncol(X)),
     mrash_weights = function(X, y, ...) rep(0, ncol(X)),
     susie_weights = function(X, y, ...) rep(0, ncol(X))
   )
@@ -732,7 +789,7 @@ test_that("twas_weights_pipeline: predictions have _predicted suffix", {
 
   expected_pred_names <- c(
     "enet_predicted", "lasso_predicted", "bayes_r_predicted",
-    "bayes_l_predicted", "mrash_predicted", "susie_predicted"
+    "dpr_gibbs_predicted", "mrash_predicted", "susie_predicted"
   )
   expect_true(all(expected_pred_names %in% names(result$twas_predictions)))
 })
@@ -745,7 +802,7 @@ test_that("twas_weights_pipeline: cv_folds=0 skips cross-validation", {
     enet_weights  = function(X, y, ...) rep(0, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0, ncol(X)),
     bayes_r_weights = function(X, y, ...) rep(0, ncol(X)),
-    bayes_l_weights = function(X, y, ...) rep(0, ncol(X)),
+    dpr_gibbs_weights = function(X, y, ...) rep(0, ncol(X)),
     mrash_weights = function(X, y, ...) rep(0, ncol(X)),
     susie_weights = function(X, y, ...) rep(0, ncol(X))
   )
@@ -782,6 +839,43 @@ test_that("twas_weights_pipeline: custom weight_methods are respected", {
   expect_equal(sort(names(result$twas_weights)), sort(c("lasso_weights", "enet_weights")))
 })
 
+test_that("twas_weights_pipeline: accepts 'fast_default' preset string", {
+  d <- make_data(n = 50, p = 10)
+  y_vec <- as.numeric(d$Y)
+
+  local_mocked_bindings(
+    enet_weights  = function(X, y, ...) rep(0, ncol(X)),
+    lasso_weights = function(X, y, ...) rep(0, ncol(X)),
+    mrash_weights = function(X, y, ...) rep(0, ncol(X)),
+    susie_weights = function(X, y, ...) rep(0, ncol(X))
+  )
+
+  result <- twas_weights_pipeline(
+    d$X, y_vec, susie_fit = NULL, cv_folds = 0,
+    weight_methods = "fast_default"
+  )
+
+  expected_methods <- c("susie_weights", "mrash_weights", "enet_weights", "lasso_weights")
+  expect_equal(sort(names(result$twas_weights)), sort(expected_methods))
+})
+
+test_that("twas_weights_pipeline: accepts custom short-name vector", {
+  d <- make_data(n = 50, p = 10)
+  y_vec <- as.numeric(d$Y)
+
+  local_mocked_bindings(
+    lasso_weights = function(X, y, ...) rep(1, ncol(X)),
+    enet_weights  = function(X, y, ...) rep(2, ncol(X))
+  )
+
+  result <- twas_weights_pipeline(
+    d$X, y_vec, susie_fit = NULL, cv_folds = 0,
+    weight_methods = c("lasso", "enet")
+  )
+
+  expect_equal(sort(names(result$twas_weights)), sort(c("lasso_weights", "enet_weights")))
+})
+
 test_that("twas_weights_pipeline: with susie_fit stores intermediate results", {
   d <- make_data(n = 50, p = 10)
   y_vec <- as.numeric(d$Y)
@@ -800,7 +894,7 @@ test_that("twas_weights_pipeline: with susie_fit stores intermediate results", {
     enet_weights  = function(X, y, ...) rep(0, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0, ncol(X)),
     bayes_r_weights = function(X, y, ...) rep(0, ncol(X)),
-    bayes_l_weights = function(X, y, ...) rep(0, ncol(X)),
+    dpr_gibbs_weights = function(X, y, ...) rep(0, ncol(X)),
     mrash_weights = function(X, y, ...) rep(0, ncol(X)),
     susie_weights = function(X, y, ...) rep(0, ncol(X))
   )
@@ -832,7 +926,7 @@ test_that("twas_weights_pipeline: with susie_fit, susie_weights gets susie_fit a
     enet_weights  = function(X, y, ...) rep(0, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0, ncol(X)),
     bayes_r_weights = function(X, y, ...) rep(0, ncol(X)),
-    bayes_l_weights = function(X, y, ...) rep(0, ncol(X)),
+    dpr_gibbs_weights = function(X, y, ...) rep(0, ncol(X)),
     mrash_weights = function(X, y, ...) rep(0, ncol(X)),
     susie_weights = function(X, y, ...) {
       args <- list(...)

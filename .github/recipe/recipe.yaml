@@ -56,9 +56,11 @@ requirements:
     - r-mr.mashr
     - r-mvsusier
     - r-ncvreg
+    - r-nnls
     - r-pgenlibr
     - r-purrr
     - r-qgg
+    - r-quadprog
     - r-rcppdpr
     - r-readr
     - r-rfast
@@ -98,6 +100,7 @@ requirements:
     - r-mr.mashr
     - r-mvsusier
     - r-ncvreg
+    - r-nnls
     - r-pgenlibr
     - r-purrr
     - r-qgg
