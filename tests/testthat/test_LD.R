@@ -823,3 +823,61 @@ test_that("can_merge checks chromosome and size", {
   b3 <- data.frame(chrom = "2", size = 100)
   expect_false(pecotmr:::can_merge(b1, b3, max_size = 500))
 })
+
+# ---- check_ld ----
+test_that("check_ld detects positive definite matrix", {
+  R <- diag(5)
+  result <- check_ld(R, method = "check")
+  expect_true(result$is_pd)
+  expect_true(result$is_psd)
+  expect_equal(result$n_negative, 0)
+  expect_equal(result$min_eigenvalue, 1)
+  expect_equal(result$method_applied, "none")
+})
+
+test_that("check_ld detects non-PSD matrix", {
+  R <- matrix(0.9, 3, 3)
+  diag(R) <- 1
+  R[1, 3] <- R[3, 1] <- -0.5
+  result <- check_ld(R, method = "check")
+  expect_false(result$is_psd)
+  expect_true(result$n_negative > 0)
+  expect_true(result$min_eigenvalue < 0)
+  expect_equal(result$method_applied, "none")
+  expect_equal(result$R, R)
+})
+
+test_that("check_ld eigenfix repairs non-PSD matrix", {
+  R <- matrix(0.9, 3, 3)
+  diag(R) <- 1
+  R[1, 3] <- R[3, 1] <- -0.5
+  result <- check_ld(R, method = "eigenfix")
+  expect_equal(result$method_applied, "eigenfix")
+  result2 <- check_ld(result$R, method = "check")
+  expect_true(result2$is_psd)
+  expect_equal(diag(result$R), rep(1, 3))
+  expect_true(isSymmetric(result$R))
+})
+
+test_that("check_ld shrink repairs non-PD matrix", {
+  R <- matrix(0.9, 3, 3)
+  diag(R) <- 1
+  R[1, 3] <- R[3, 1] <- -0.5
+  result <- check_ld(R, method = "shrink", shrinkage = 0.1)
+  expect_equal(result$method_applied, "shrink")
+  result2 <- check_ld(result$R, method = "check")
+  expect_true(result2$is_pd)
+})
+
+test_that("check_ld eigenfix is no-op on PSD matrix", {
+  R <- diag(5)
+  result <- check_ld(R, method = "eigenfix")
+  expect_equal(result$method_applied, "none")
+  expect_equal(result$R, R)
+})
+
+test_that("check_ld condition_number is correct", {
+  R <- diag(c(1, 0.5, 0.1))
+  result <- check_ld(R, method = "check")
+  expect_equal(result$condition_number, 10)
+})
