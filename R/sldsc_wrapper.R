@@ -1,8 +1,8 @@
 # Stratified LD Score Regression (S-LDSC) post-processing wrappers around polyfun.
 #
 # This file provides the post-processing layer for the xqtl-protocol sLDSC pipeline:
-# read polyfun outputs per trait, compute Gazal-style standardized tau* and
-# differential per-SNP heritability (EnrichStat), and run DerSimonian-Laird
+# read polyfun outputs per trait, compute Gazal-style standardized tau* and the
+# differential per-SNP heritability statistic (EnrichStat), and run DerSimonian-Laird
 # random-effects meta-analysis across traits.
 #
 # Reference panel convention: all LD-derived quantities (baseline LD scores,
@@ -30,8 +30,8 @@
 #'
 #' @return A named list with components:
 #'   \describe{
-#'     \item{categories}{Character vector of annotation names, in regression order
-#'       (target annotations first, baseline last by convention).}
+#'     \item{categories}{Character vector of annotation names in regression order
+#'       (target annotations first, baseline last by polyfun convention).}
 #'     \item{tau}{Numeric named vector of regression coefficients \eqn{\tau_C}.}
 #'     \item{tau_se}{Numeric named vector of standard errors of \eqn{\tau_C}.}
 #'     \item{enrichment}{Numeric named vector of \eqn{E_C = \pi^{h^2}_C / \pi^M_C}.}
@@ -40,7 +40,7 @@
 #'       per-SNP heritability test (the EnrichStat p-value reported by polyfun).}
 #'     \item{prop_h2}{Numeric named vector \eqn{\pi^{h^2}_C}.}
 #'     \item{prop_snps}{Numeric named vector \eqn{\pi^M_C}.}
-#'     \item{h2g}{Scalar total trait heritability \eqn{h^2_g}.}
+#'     \item{h2g}{Scalar total trait heritability \eqn{h^2_g}, parsed from the log.}
 #'     \item{tau_blocks}{Numeric matrix of per-block jackknife \eqn{\tau} values,
 #'       dimensions (n_blocks x n_annotations), columns named by category.}
 #'     \item{n_blocks}{Integer number of jackknife blocks (typically 200).}
@@ -65,6 +65,12 @@ read_sldsc_trait <- function(prefix) {
 #'   restriction is required for the standardization to be internally consistent
 #'   with polyfun's regression, which operates on MAF > cutoff SNPs by default.
 #'
+#' @details Implementation walks per-chromosome `.annot.gz` files, joins them
+#'   with PLINK `.frq` files when `maf_cutoff > 0`, and pools across chromosomes
+#'   with the standard pooled-variance formula
+#'   \deqn{sd_C = \sqrt{\sum_{\text{chr}} (n_{\text{chr}} - 1)\,\mathrm{Var}(C_{\text{chr}}) \,/\, \sum_{\text{chr}} (n_{\text{chr}} - 1)}}
+#'   over the MAF-restricted SNPs only.
+#'
 #' @param target_anno_dir Character. Directory containing target annotation files
 #'   (one per chromosome) in polyfun's `.annot.gz` format.
 #' @param frqfile_dir Character or NULL. Directory containing PLINK `.frq` files
@@ -73,23 +79,13 @@ read_sldsc_trait <- function(prefix) {
 #' @param plink_name Character. Filename prefix of the `.frq` files
 #'   (e.g. `"ADSP_chr"`). Files are expected at `{plink_name}{chr}.frq`.
 #' @param maf_cutoff Numeric, default `0.05`. Only SNPs with `MAF > maf_cutoff`
-#'   contribute to sd. Set to `0` to disable filtering (must match the
-#'   `--not-M-5-50` regression mode for internal consistency).
+#'   contribute to sd. Set to `0` to disable (must match the regression's
+#'   `--not-M-5-50` mode).
 #' @param annot_cols Character or integer vector, default NULL. Annotation columns
 #'   to compute sd for. If NULL, all annotation columns (i.e. all columns past
 #'   the standard fixed columns CHR/SNP/BP/CM/A1/A2/MAF) are used.
 #'
 #' @return Named numeric vector of \eqn{sd_C} values, one per annotation.
-#'
-#' @examples
-#' \dontrun{
-#' sd_annot <- compute_sldsc_annot_sd(
-#'   target_anno_dir = "/output/ldscores/AC_DeJager_eQTL",
-#'   frqfile_dir     = "/ref/ADSP/frq",
-#'   plink_name      = "ADSP_chr",
-#'   maf_cutoff      = 0.05
-#' )
-#' }
 #'
 #' @export
 compute_sldsc_annot_sd <- function(target_anno_dir, frqfile_dir = NULL,
@@ -102,12 +98,14 @@ compute_sldsc_annot_sd <- function(target_anno_dir, frqfile_dir = NULL,
 #' @title Reference-panel SNP count at a given MAF cutoff
 #'
 #' @description Returns the number of SNPs in the reference panel above the MAF
-#'   cutoff, matching the regression's M_5_50 (when `maf_cutoff > 0`) or M
-#'   (when `maf_cutoff == 0`). Used as \eqn{M_{ref}} in the standardization.
+#'   cutoff, used as \eqn{M_{ref}} in the standardization. When
+#'   `maf_cutoff > 0` the function sums `.l2.M_5_50` files (matching polyfun's
+#'   regression which uses M_5_50 with `--frqfile-chr`); when `maf_cutoff == 0`
+#'   it sums `.l2.M` files (matching the `--not-M-5-50` regression mode).
 #'
 #' @param target_anno_dir Character. Directory containing per-chromosome
 #'   `.l2.M_5_50` (when MAF-filtered) or `.l2.M` (when not) files produced by
-#'   polyfun's `compute_ldscores.py` for the target annotation.
+#'   polyfun's `compute_ldscores.py`.
 #' @param maf_cutoff Numeric, default `0.05`.
 #'
 #' @return Scalar integer: total number of SNPs in the reference panel above the cutoff.
@@ -137,47 +135,57 @@ is_binary_sldsc_annot <- function(target_anno_dir, annot_cols = NULL) {
 }
 
 
-#' @title Standardize tau and compute per-block tau* and EnrichStat for one polyfun run
+#' @title Standardize tau and compute EnrichStat for one polyfun run
 #'
 #' @description Given the polyfun read result plus the annotation sd's and
 #'   reference SNP count, computes the Gazal-style standardized tau (\eqn{\tau^*})
 #'   and the differential per-SNP heritability statistic (EnrichStat) for the
-#'   target annotations, including their per-block jackknife values for use in
-#'   cross-trait meta-analysis.
+#'   target annotations.
 #'
-#' @details The standardization is
+#' @details Standardization:
 #'   \deqn{\tau^*_C = \tau_C \cdot sd_C \cdot M_{ref} / h^2_g}
 #'   applied both to the point estimate and to each of the n_blocks jackknife
-#'   blocks. The EnrichStat is
-#'   \deqn{\frac{h^2_g}{M_{ref}}\left[\frac{\pi^{h^2}_C}{\pi^M_C}
-#'         - \frac{1-\pi^{h^2}_C}{1-\pi^M_C}\right]}
-#'   computed from the per-block tau values, with jackknife SE from the per-block
-#'   variance \eqn{\sqrt{\frac{(B-1)^2}{B} Var_b}}.
+#'   blocks (the per-block \eqn{\tau^*_C} values are returned for use as inputs
+#'   to cross-trait random-effects meta).
+#'
+#'   EnrichStat point estimate:
+#'   \deqn{\text{EnrichStat}_C = \frac{h^2_g}{M_{ref}}\!\left[\frac{\pi^{h^2}_C}{\pi^M_C} - \frac{1-\pi^{h^2}_C}{1-\pi^M_C}\right]}
+#'   computed once from polyfun's reported \eqn{\pi^{h^2}_C} and \eqn{\pi^M_C}.
+#'   Its standard error is recovered from polyfun's `Enrichment_p` via
+#'   \deqn{|Z_C| = \Phi^{-1}(1 - p_C/2), \qquad SE_{\text{EnrichStat}_C} = |\text{EnrichStat}_C| / |Z_C|.}
 #'
 #'   Only target annotations are returned; baseline annotations are dropped after
-#'   serving their role of conditioning the regression.
+#'   serving their role of conditioning the regression. Following the original
+#'   pipeline scope, EnrichStat / E are computed only when the call corresponds
+#'   to a single-target run; in joint-mode runs only \eqn{\tau^*_C} is produced
+#'   per target.
 #'
 #' @param trait_data List. Output of \code{\link{read_sldsc_trait}} for one polyfun run.
 #' @param sd_annot Named numeric vector. Output of
 #'   \code{\link{compute_sldsc_annot_sd}}, restricted to target annotations.
 #' @param M_ref Scalar. Output of \code{\link{compute_sldsc_M_ref}}.
 #' @param target_categories Character vector or NULL. Annotation names to keep.
-#'   If NULL, all categories with names matching `names(sd_annot)` are kept.
+#'   If NULL, all categories matching `names(sd_annot)` are kept.
+#' @param mode Character, one of `"single"` or `"joint"`. Controls which
+#'   quantities are produced (E and EnrichStat are produced only for `"single"`;
+#'   \eqn{\tau^*_C} is produced for both).
 #'
 #' @return A list with components:
 #'   \describe{
-#'     \item{summary}{Data frame with one row per target annotation and columns:
-#'       `target`, `tau`, `tau_se`, `tau_star`, `tau_star_se`, `enrichment`,
-#'       `enrichment_se`, `enrichment_p`, `enrichstat`, `enrichstat_se`.}
+#'     \item{summary}{Data frame with one row per target annotation. Columns:
+#'       `target`, `tau`, `tau_se`, `tau_star`, `tau_star_se`. For `mode="single"`
+#'       additionally `enrichment`, `enrichment_se`, `enrichment_p`,
+#'       `enrichstat`, `enrichstat_se` (the back-solved SE).}
 #'     \item{tau_star_blocks}{Matrix (n_blocks x n_target) of per-block \eqn{\tau^*_C}.}
-#'     \item{enrichstat_blocks}{Matrix (n_blocks x n_target) of per-block EnrichStat.}
 #'     \item{h2g}{Scalar trait heritability.}
 #'     \item{n_blocks}{Integer.}
+#'     \item{mode}{Echo of the input mode.}
 #'   }
 #'
 #' @export
 standardize_sldsc_trait <- function(trait_data, sd_annot, M_ref,
-                                    target_categories = NULL) {
+                                    target_categories = NULL,
+                                    mode = c("single", "joint")) {
   stop("Not yet implemented (skeleton).")
 }
 
@@ -194,22 +202,30 @@ standardize_sldsc_trait <- function(trait_data, sd_annot, M_ref,
 #'         \quad SE_{meta} = 1/\sqrt{\sum_i w_i},
 #'         \quad w_i = 1/(SE_i^2 + \hat\sigma^2)}
 #'   via `rmeta::meta.summaries(..., method = "random")`. The two-sided p-value
-#'   is computed from the meta z-score under the standard normal.
+#'   is computed from the meta z-score under the standard normal:
+#'   \eqn{p = 2\Phi(-|Z_{meta}|)}.
 #'
-#'   `quantity = "tau_star"` and `"enrichstat"` use the jackknife SE from
-#'   per-block delete values (computed inside
-#'   \code{\link{standardize_sldsc_trait}}). `quantity = "enrichment"` uses
-#'   the SE reported directly by the regression engine.
+#'   Per-trait \eqn{SE_i} sources:
+#'   - `quantity = "tau_star"`: jackknife SE from the per-block \eqn{\tau^*}
+#'     values (computed in \code{\link{standardize_sldsc_trait}}).
+#'   - `quantity = "enrichment"`: polyfun-reported `Enrichment_std_error`.
+#'   - `quantity = "enrichstat"`: back-solved SE from polyfun's `Enrichment_p`,
+#'     \eqn{SE = |\text{EnrichStat}|/|\Phi^{-1}(1-p/2)|}.
+#'
+#'   For binary-annotation enrichment reporting, callers typically combine two
+#'   meta runs: effect size and SE from `quantity="enrichment"` (interpretable
+#'   on the original enrichment-fold scale), p-value from `quantity="enrichstat"`
+#'   (the appropriate hypothesis test). The top-level
+#'   \code{\link{sldsc_postprocessing_pipeline}} performs this combination.
 #'
 #' @param per_trait_estimates Named list of standardized per-trait results from
 #'   \code{\link{standardize_sldsc_trait}}. Pass a subset to re-meta on a
 #'   user-chosen group of traits.
 #' @param category Character. Annotation name to meta-analyze.
-#' @param quantity Character, one of `"tau_star"`, `"enrichment"`, or
-#'   `"enrichstat"`.
+#' @param quantity Character, one of `"tau_star"`, `"enrichment"`, or `"enrichstat"`.
 #'
-#' @return A list with components: `mean`, `se`, `p`, `n_traits`,
-#'   `traits_used`, and `tau2` (the DerSimonian-Laird between-trait variance).
+#' @return A list with components: `mean`, `se`, `p`, `n_traits`, `traits_used`,
+#'   and `tau2` (the DerSimonian-Laird between-trait variance).
 #'
 #' @examples
 #' \dontrun{
@@ -229,56 +245,57 @@ meta_sldsc_random <- function(per_trait_estimates, category,
 
 #' @title End-to-end S-LDSC post-processing across traits, single + joint in one pass
 #'
-#' @description Top-level convenience wrapper. Reads polyfun outputs (single-tau
-#'   runs and the joint-tau run) for each trait, standardizes both modes, and
-#'   runs the default random-effects meta-analysis across all traits supplied.
-#'   Single and joint analyses are produced in one pass; no `joint_tau` flag.
+#' @description Top-level convenience wrapper. Reads polyfun outputs (one
+#'   single-target run per target plus one joint run per trait), standardizes
+#'   both modes, and runs the default random-effects meta-analysis across all
+#'   traits supplied. Single-target and joint-target analyses are produced in
+#'   one pass.
 #'
-#' @details For a set of \eqn{N} target annotations and one trait, the caller is
-#'   expected to have already produced \eqn{N+1} polyfun runs: \eqn{N} single-tau
-#'   runs (each fitting one target + baseline) and 1 joint-tau run (fitting all
-#'   \eqn{N} targets + baseline together). The pipeline reads all of these, drops
+#' @details For \eqn{N} target annotations and one trait, the caller is expected
+#'   to have already produced \eqn{N+1} polyfun runs: \eqn{N} single-target runs
+#'   (each fitting one target + baseline) and 1 joint run (fitting all \eqn{N}
+#'   targets + baseline together). The pipeline reads all of these, drops
 #'   baseline categories, standardizes both modes, and assembles consolidated
 #'   per-trait and meta data frames.
 #'
 #'   Reports baseline annotation count and names via `message()` once at the
-#'   start of the run for transparency.
+#'   start of the run.
 #'
-#'   Cross-type comparison: the `meta$tau_star` frame is the apple-to-apple table
-#'   for ranking annotations regardless of binary/continuous type. The `is_binary`
-#'   column lets callers filter further when within-type comparison is desired.
+#'   Cross-type comparison: the `meta$tau_star` frame is the apple-to-apple
+#'   table for ranking annotations regardless of binary/continuous type. The
+#'   `is_binary` column lets callers filter when within-type comparison is desired.
+#'
+#'   Two-channel enrichment meta (binary annotations only): the `meta$enrichment`
+#'   frame's `single_mean` and `single_se` come from the meta on \eqn{E_C};
+#'   the `single_p` comes from the meta on EnrichStat (the appropriate
+#'   hypothesis test).
 #'
 #' @param trait_single_prefixes Named list. For each trait (name = trait id),
-#'   a character vector of length \eqn{N} giving the polyfun output prefixes for
-#'   the \eqn{N} single-tau runs (one per target annotation). Order must match
-#'   `target_categories`.
-#' @param trait_joint_prefix Named character. For each trait (name = trait id,
-#'   matching `trait_single_prefixes`), the polyfun output prefix for the joint-tau
-#'   run that fits all \eqn{N} targets together.
-#' @param target_anno_dir Character. Directory of the target annotation files
-#'   (used for `sd_C` and binary detection). When all \eqn{N} targets share
-#'   one directory (multi-column annot files), pass that. When each target has
-#'   its own directory, pass a named character vector (names = target categories).
-#' @param frqfile_dir Character or NULL. Directory of `.frq` files for the panel.
-#' @param plink_name Character. Filename prefix of `.frq` files (default `"ADSP_chr"`).
+#'   a character vector of length \eqn{N} giving the polyfun output prefixes
+#'   for the \eqn{N} single-target runs. Order must match `target_categories`.
+#' @param trait_joint_prefix Named character. For each trait (name matching
+#'   `trait_single_prefixes`), the polyfun output prefix for the joint run.
+#' @param target_anno_dir Character. Directory of target annotation files used
+#'   for `sd_C` and binary detection. Typically the joint-mode directory, since
+#'   it carries all target annotation columns.
+#' @param frqfile_dir Character or NULL.
+#' @param plink_name Character. Default `"ADSP_chr"`.
 #' @param maf_cutoff Numeric, default `0.05`.
-#' @param target_categories Character vector or NULL. Target annotation names to
-#'   report. If NULL, auto-detected from the joint-run results as all categories
-#'   not in baseline.
+#' @param target_categories Character vector or NULL. Auto-detected from the
+#'   joint-run results as all categories not in baseline if NULL.
 #'
 #' @return A list with components:
 #'   \describe{
 #'     \item{per_trait}{Named list of per-trait results. For each trait, a list with:
 #'       `summary` (wide data frame of single + joint estimates side-by-side per
-#'       target annotation, with `is_binary` flag), `tau_star_blocks_single`,
-#'       `tau_star_blocks_joint`, `enrichstat_blocks_single`,
-#'       `enrichstat_blocks_joint` (all matrices), and `h2g`.}
+#'       target annotation, with `is_binary` flag), `tau_star_blocks_single`
+#'       (matrix), `tau_star_blocks_joint` (matrix), and `h2g`.}
 #'     \item{meta}{List of three data frames, each with one row per target annotation:
 #'       \itemize{
 #'         \item `tau_star`: columns `target`, `is_binary`, `single_mean`,
 #'           `single_se`, `single_p`, `joint_mean`, `joint_se`, `joint_p`, `n_traits`.
-#'         \item `enrichment`: same shape.
-#'         \item `enrichstat`: same shape.
+#'         \item `enrichment`: same shape; effect/SE from E meta, p from EnrichStat meta.
+#'         \item `enrichstat`: same shape; pure EnrichStat meta.
 #'       }
 #'       The `tau_star` frame is the cross-type comparable headline.}
 #'     \item{params}{List echoing `maf_cutoff`, `M_ref`, `target_categories`,
@@ -303,7 +320,7 @@ meta_sldsc_random <- function(per_trait_estimates, category,
 #'   target_categories = c("anno1", "anno2")
 #' )
 #' res$meta$tau_star      # cross-type comparable headline
-#' res$meta$enrichment    # within-binary headline
+#' res$meta$enrichment    # within-binary headline (effect/SE from E, p from EnrichStat)
 #'
 #' # later, re-meta on a custom subset of traits
 #' meta_neuro <- meta_sldsc_random(
