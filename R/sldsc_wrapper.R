@@ -546,6 +546,11 @@ sldsc_postprocessing_pipeline <- function(trait_single_prefixes,
   message("[sldsc] Detecting binary vs continuous annotations...")
   is_binary_full <- is_binary_sldsc_annot(target_anno_dir = target_anno_dir)
 
+  # Polyfun renames target columns to `<col>_0` (file_idx=0 in --ref-ld-chr);
+  # mirror that suffix so intersect() with pivot_run$categories matches.
+  names(sd_annot_full)  <- paste0(names(sd_annot_full),  "_0")
+  names(is_binary_full) <- paste0(names(is_binary_full), "_0")
+
   # Auto-detect target categories from a representative run.
   if (is.null(target_categories)) {
     pivot_run <- NULL
@@ -564,6 +569,33 @@ sldsc_postprocessing_pipeline <- function(trait_single_prefixes,
     if (is.null(pivot_run))
       stop("sldsc_postprocessing_pipeline: cannot auto-detect target_categories.")
     target_categories <- intersect(pivot_run$categories, names(sd_annot_full))
+    # Fallback when .annot.gz names + "_0" do not match polyfun's .results
+    # Category. Happens when the pipeline ran with --snp-list, since
+    # ldsc.py --l2 hardcodes the LD score column to "L2" (single annot) or
+    # "<annot>L2" (joint), instead of preserving the .annot.gz names.
+    # Trust polyfun's invariant that target categories occupy the first
+    # length(sd_annot_full) rows of .results, then rename positionally.
+    if (length(target_categories) == 0L) {
+      n_target   <- length(sd_annot_full)
+      n_baseline <- length(pivot_run$categories) - n_target
+      old_names  <- names(sd_annot_full)
+      target_categories <- pivot_run$categories[seq_len(n_target)]
+      names(sd_annot_full)  <- target_categories
+      names(is_binary_full) <- target_categories
+      baseline_preview <- if (n_baseline > 0L)
+        paste(utils::head(pivot_run$categories[-seq_len(n_target)], 3), collapse = ", ")
+      else "(none)"
+      message(sprintf(paste0(
+        "[sldsc] sd_annot/is_binary names did not match polyfun .results categories;\n",
+        "        falling back to positional rename (target = first %d rows of .results)\n",
+        "        target  (%d): %s -> %s\n",
+        "        baseline (%d): %s%s"),
+        n_target,
+        n_target, paste(old_names, collapse = ", "),
+                  paste(target_categories, collapse = ", "),
+        n_baseline, baseline_preview,
+        if (n_baseline > 3L) ", ..." else ""))
+    }
     message(sprintf("[sldsc] Auto-detected %d target categories", length(target_categories)))
   }
 
