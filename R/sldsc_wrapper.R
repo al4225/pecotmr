@@ -179,18 +179,29 @@ compute_sldsc_annot_sd <- function(target_anno_dir, frqfile_dir = NULL,
 }
 
 
-#' @title Reference-panel SNP count at a given MAF cutoff
+#' @title Reference-panel SNP count (the M_ref used to standardise tau*)
 #'
-#' @description Returns the number of SNPs in the reference panel above the MAF
-#'   cutoff. When `maf_cutoff > 0`, counts MAF > cutoff entries across all
-#'   `.frq` files. When `maf_cutoff == 0`, counts rows of `.l2.ldscore`
-#'   files in `target_anno_dir`.
+#' @description `M_ref` is the number of SNPs in the REFERENCE PANEL over which
+#'   heritability is partitioned in the sLDSC model
+#'   (`h2(C) = sum_{j in M_ref} a_C(j) sum_{C'} tau_{C'} a_{C'}(j)`). It is
+#'   panel-defined and is **not** the regression SNP set (HapMap3 ~1M) nor any
+#'   HM3-subsetted target output:
+#'   \itemize{
+#'     \item `maf_cutoff > 0` (Gazal/Finucane convention): count MAF > cutoff
+#'       SNPs across all `.frq` files (the same set polyfun's `.l2.M_5_50` sums).
+#'     \item `maf_cutoff == 0` (all-M variant): count ALL SNPs across all
+#'       `.frq` files (the same set polyfun's `.l2.M` sums).
+#'   }
+#'   `target_anno_dir` is a fallback only, used when no `.frq` directory is
+#'   given; that fallback counts `.l2.ldscore` rows and is WRONG when the target
+#'   was HM3-subsetted (it then yields the regression SNP count, not M_ref).
+#'   Previously this made `allm + snplist` runs report a ~8x too-small M_ref and
+#'   hence a ~8x too-small tau*.
 #'
-#' @param target_anno_dir Character or NULL. Directory of `.l2.ldscore` files
-#'   produced by polyfun's `compute_ldscores.py`. Required when
-#'   `maf_cutoff == 0`.
-#' @param frqfile_dir Character or NULL. Directory of PLINK `.frq` files.
-#'   Required when `maf_cutoff > 0`.
+#' @param target_anno_dir Character or NULL. Fallback only — directory of
+#'   `.l2.ldscore` files. Used only when `frqfile_dir` is unavailable.
+#' @param frqfile_dir Character or NULL. Directory of PLINK `.frq` files; the
+#'   preferred (recommended) source of M_ref.
 #' @param plink_name Character. Filename prefix of `.frq` files.
 #' @param maf_cutoff Numeric, default `0.05`.
 #'
@@ -200,33 +211,37 @@ compute_sldsc_annot_sd <- function(target_anno_dir, frqfile_dir = NULL,
 #' @export
 compute_sldsc_M_ref <- function(target_anno_dir = NULL, frqfile_dir = NULL,
                                 plink_name = "ADSP_chr", maf_cutoff = 0.05) {
-  if (maf_cutoff > 0) {
-    if (is.null(frqfile_dir) || !dir.exists(frqfile_dir))
-      stop("compute_sldsc_M_ref: maf_cutoff = ", maf_cutoff,
-           " requires frqfile_dir.")
+  ## --- preferred path: count reference-panel SNPs from the .frq files ---
+  if (!is.null(frqfile_dir) && dir.exists(frqfile_dir)) {
     pat <- paste0("^", gsub("([.])", "\\\\\\1", plink_name), "[0-9]+\\.frq$")
     frq_files <- list.files(frqfile_dir, pattern = pat, full.names = TRUE)
     if (length(frq_files) == 0L)
       frq_files <- list.files(frqfile_dir, pattern = "\\.frq$", full.names = TRUE)
-    if (length(frq_files) == 0L)
-      stop("compute_sldsc_M_ref: no .frq files found in: ", frqfile_dir)
-
-    total <- 0L
-    for (f in frq_files) {
-      frq <- data.table::fread(f, select = "MAF")
-      total <- total + sum(!is.na(frq$MAF) & frq$MAF > maf_cutoff)
+    if (length(frq_files) > 0L) {
+      total <- 0L
+      for (f in frq_files) {
+        frq <- data.table::fread(f, select = "MAF")
+        total <- total + if (maf_cutoff > 0)
+          sum(!is.na(frq$MAF) & frq$MAF > maf_cutoff) else nrow(frq)
+      }
+      return(as.integer(total))
     }
-    return(as.integer(total))
   }
 
+  ## --- fallback only (no .frq dir): count target .l2.ldscore rows ---
+  if (maf_cutoff > 0)
+    stop("compute_sldsc_M_ref: maf_cutoff = ", maf_cutoff,
+         " requires frqfile_dir (to count MAF>cutoff reference-panel SNPs).")
   if (is.null(target_anno_dir) || !dir.exists(target_anno_dir))
-    stop("compute_sldsc_M_ref: maf_cutoff = 0 requires target_anno_dir.")
+    stop("compute_sldsc_M_ref: need frqfile_dir, or target_anno_dir as fallback.")
   files <- list.files(target_anno_dir,
                       pattern = "\\.l2\\.ldscore\\.(gz|parquet)$",
                       full.names = TRUE)
   if (length(files) == 0L)
-    stop("compute_sldsc_M_ref: no .l2.ldscore files in: ", target_anno_dir)
-
+    stop("compute_sldsc_M_ref: no .frq files and no .l2.ldscore files found.")
+  warning("compute_sldsc_M_ref: no .frq dir given; counting target .l2.ldscore ",
+          "rows as M_ref. If the target was HM3-subsetted this UNDERCOUNTS the ",
+          "reference panel and shrinks tau*. Pass frqfile_dir instead.")
   total <- 0L
   for (f in files) {
     if (endsWith(f, ".parquet")) {
@@ -513,6 +528,15 @@ meta_sldsc_random <- function(per_trait_estimates, category,
 #' @param maf_cutoff Numeric, default `0.05`.
 #' @param target_categories Character vector or NULL. Auto-detected from the
 #'   first available run if NULL.
+#' @param target_labels Character vector or NULL. Optional user-friendly display
+#'   names for the target annotations, same length and order as the resolved
+#'   `target_categories` (e.g. `c("quantile_eQTL", "eQTL")` to replace the
+#'   polyfun `.results` names `c("ANNOT_1_0", "ANNOT_2_0")`). When given, every
+#'   `target` column and `tau*`-block column name in the output is renamed;
+#'   `params$target_categories` then holds the labels and
+#'   `params$target_categories_orig` keeps the original polyfun names. When NULL
+#'   (default), nothing is renamed — the original `.results` category names are
+#'   used as before.
 #'
 #' @return List with `per_trait`, `meta` (three frames), `params`.
 #'
@@ -523,7 +547,8 @@ sldsc_postprocessing_pipeline <- function(trait_single_prefixes,
                                           frqfile_dir = NULL,
                                           plink_name = "ADSP_chr",
                                           maf_cutoff = 0.05,
-                                          target_categories = NULL) {
+                                          target_categories = NULL,
+                                          target_labels = NULL) {
   trait_names <- names(trait_single_prefixes)
   if (is.null(trait_names))
     stop("sldsc_postprocessing_pipeline: trait_single_prefixes must be a named list.")
@@ -746,7 +771,7 @@ sldsc_postprocessing_pipeline <- function(trait_single_prefixes,
   # Pure EnrichStat meta (separate frame).
   meta_enrichstat <- meta_ES_single
 
-  list(
+  res <- list(
     per_trait = per_trait,
     meta = list(
       tau_star   = meta_tau_star,
@@ -762,4 +787,39 @@ sldsc_postprocessing_pipeline <- function(trait_single_prefixes,
       trait_names         = trait_names
     )
   )
+
+  # Optional: relabel target categories to user-friendly display names.
+  # If target_labels is NULL we keep the original polyfun .results names.
+  if (!is.null(target_labels)) {
+    target_labels <- as.character(target_labels)
+    if (length(target_labels) != length(target_categories))
+      stop(sprintf(paste0("sldsc_postprocessing_pipeline: target_labels has length %d but ",
+                          "there are %d target categories (%s)."),
+                   length(target_labels), length(target_categories),
+                   paste(target_categories, collapse = ", ")))
+    relab     <- stats::setNames(target_labels, target_categories)
+    relab_vec <- function(x) { y <- unname(relab[x]); y[is.na(y)] <- x[is.na(y)]; y }
+
+    for (t in names(res$per_trait)) {
+      pt <- res$per_trait[[t]]
+      if (!is.null(pt$summary) && "target" %in% names(pt$summary))
+        res$per_trait[[t]]$summary$target <- relab_vec(pt$summary$target)
+      for (bn in c("tau_star_blocks_single", "tau_star_blocks_joint")) {
+        b <- pt[[bn]]
+        if (!is.null(b) && !is.null(colnames(b)))
+          colnames(res$per_trait[[t]][[bn]]) <- relab_vec(colnames(b))
+      }
+    }
+    for (mn in names(res$meta)) {
+      if (!is.null(res$meta[[mn]]) && "target" %in% names(res$meta[[mn]]))
+        res$meta[[mn]]$target <- relab_vec(res$meta[[mn]]$target)
+    }
+    res$params$target_categories_orig <- res$params$target_categories
+    res$params$target_categories      <- unname(relab[target_categories])
+    message(sprintf("[sldsc] Relabeled target categories: %s",
+                    paste(sprintf("%s -> %s", target_categories,
+                                  unname(relab[target_categories])), collapse = ", ")))
+  }
+
+  res
 }
