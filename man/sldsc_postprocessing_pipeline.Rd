@@ -11,7 +11,8 @@ sldsc_postprocessing_pipeline(
   frqfile_dir = NULL,
   plink_name = "ADSP_chr",
   maf_cutoff = 0.05,
-  target_categories = NULL
+  target_categories = NULL,
+  target_labels = NULL
 )
 }
 \arguments{
@@ -33,6 +34,16 @@ for `sd_C` and binary detection (typically the joint-mode dir).}
 
 \item{target_categories}{Character vector or NULL. Auto-detected from the
 first available run if NULL.}
+
+\item{target_labels}{Character vector or NULL. Optional user-friendly display
+names for the target annotations, same length and order as the resolved
+`target_categories` (e.g. `c("quantile_eQTL", "eQTL")` to replace the
+polyfun `.results` names `c("ANNOT_1_0", "ANNOT_2_0")`). When given, every
+`target` column and `tau*`-block column name in the output is renamed;
+`params$target_categories` then holds the labels and
+`params$target_categories_orig` keeps the original polyfun names. When NULL
+(default), nothing is renamed — the original `.results` category names are
+used as before.}
 }
 \value{
 List with `per_trait`, `meta` (three frames), `params`.

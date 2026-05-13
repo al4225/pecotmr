@@ -2,7 +2,7 @@
 % Please edit documentation in R/sldsc_wrapper.R
 \name{compute_sldsc_M_ref}
 \alias{compute_sldsc_M_ref}
-\title{Reference-panel SNP count at a given MAF cutoff}
+\title{Reference-panel SNP count (the M_ref used to standardise tau*)}
 \usage{
 compute_sldsc_M_ref(
   target_anno_dir = NULL,
@@ -12,12 +12,11 @@ compute_sldsc_M_ref(
 )
 }
 \arguments{
-\item{target_anno_dir}{Character or NULL. Directory of `.l2.ldscore` files
-produced by polyfun's `compute_ldscores.py`. Required when
-`maf_cutoff == 0`.}
+\item{target_anno_dir}{Character or NULL. Fallback only — directory of
+`.l2.ldscore` files. Used only when `frqfile_dir` is unavailable.}
 
-\item{frqfile_dir}{Character or NULL. Directory of PLINK `.frq` files.
-Required when `maf_cutoff > 0`.}
+\item{frqfile_dir}{Character or NULL. Directory of PLINK `.frq` files; the
+preferred (recommended) source of M_ref.}
 
 \item{plink_name}{Character. Filename prefix of `.frq` files.}
 
@@ -27,8 +26,20 @@ Required when `maf_cutoff > 0`.}
 Scalar integer.
 }
 \description{
-Returns the number of SNPs in the reference panel above the MAF
-  cutoff. When `maf_cutoff > 0`, counts MAF > cutoff entries across all
-  `.frq` files. When `maf_cutoff == 0`, counts rows of `.l2.ldscore`
-  files in `target_anno_dir`.
+`M_ref` is the number of SNPs in the REFERENCE PANEL over which
+  heritability is partitioned in the sLDSC model
+  (`h2(C) = sum_{j in M_ref} a_C(j) sum_{C'} tau_{C'} a_{C'}(j)`). It is
+  panel-defined and is **not** the regression SNP set (HapMap3 ~1M) nor any
+  HM3-subsetted target output:
+  \itemize{
+    \item `maf_cutoff > 0` (Gazal/Finucane convention): count MAF > cutoff
+      SNPs across all `.frq` files (the same set polyfun's `.l2.M_5_50` sums).
+    \item `maf_cutoff == 0` (all-M variant): count ALL SNPs across all
+      `.frq` files (the same set polyfun's `.l2.M` sums).
+  }
+  `target_anno_dir` is a fallback only, used when no `.frq` directory is
+  given; that fallback counts `.l2.ldscore` rows and is WRONG when the target
+  was HM3-subsetted (it then yields the regression SNP count, not M_ref).
+  Previously this made `allm + snplist` runs report a ~8x too-small M_ref and
+  hence a ~8x too-small tau*.
 }
