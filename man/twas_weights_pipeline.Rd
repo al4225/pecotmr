@@ -59,6 +59,9 @@ for ensemble learning. One of \code{"quadprog"}, \code{"nnls"},
 
 \item{ensemble_alpha}{Elastic net mixing parameter, used only when
 \code{ensemble_solver = "glmnet"}. Defaults to 1 (lasso).}
+
+\item{estimate_pi}{If TRUE, estimate spike-and-slab sparsity from mr.ash
+before running Bayesian alphabet methods that need inclusion probabilities.}
 }
 \value{
 A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.

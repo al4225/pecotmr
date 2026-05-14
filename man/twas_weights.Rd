@@ -27,6 +27,9 @@ If set to 0 or 1, no parallel processing is performed.
 If set to 2 or more, parallel processing is enabled with that many threads.}
 
 \item{fitted_models}{Optional named list of fitted SuSiE-family models.}
+
+\item{retain_fits}{If TRUE, retain fitted model objects as attributes on
+returned weight matrices when supported by the weight method.}
 }
 \value{
 A list where each element is named after a method and contains the weight matrix produced by that method.

@@ -477,6 +477,7 @@ trim_finemapping_fit <- function(fit, effect_idx, method, cs_tables) {
     lbf_variable = if (!is.null(lbf_variable)) lbf_variable[effect_idx, , drop = FALSE] else NULL,
     V = if (!is.null(fit$V)) fit$V[effect_idx] else NULL,
     niter = fit$niter,
+    max_L = nrow(alpha),
     n_effects = nrow(alpha)
   )
 

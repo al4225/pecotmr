@@ -465,6 +465,8 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #'        If set to 0 or 1, no parallel processing is performed.
 #'        If set to 2 or more, parallel processing is enabled with that many threads.
 #' @param fitted_models Optional named list of fitted SuSiE-family models.
+#' @param retain_fits If TRUE, retain fitted model objects as attributes on
+#'   returned weight matrices when supported by the weight method.
 #' @return A list where each element is named after a method and contains the weight matrix produced by that method.
 #'
 #' @export
@@ -647,6 +649,8 @@ estimate_sparsity <- function(weight_results) {
 #'   \code{\link{ensemble_weights}}. Defaults to \code{"quadprog"}.
 #' @param ensemble_alpha Elastic net mixing parameter, used only when
 #'   \code{ensemble_solver = "glmnet"}. Defaults to 1 (lasso).
+#' @param estimate_pi If TRUE, estimate spike-and-slab sparsity from mr.ash
+#'   before running Bayesian alphabet methods that need inclusion probabilities.
 #'
 #' @return A list containing results from the TWAS pipeline, including TWAS weights, predictions, and optionally cross-validation results.
 #' @export
