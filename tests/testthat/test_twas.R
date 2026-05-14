@@ -285,7 +285,7 @@ test_that("twas_weights_cv is reproducible with seed", {
         susie_weights = function(X, y, ...) rnorm(ncol(X)),
         glmnet_weights = function(X, y, ...) runif(ncol(X))
     )
-    weight_methods_test <- list(susie_weights = c("init_prior_sd"), glmnet_weights = c("init_prior_sd"))
+    weight_methods_test <- list(susie_weights = list(), glmnet_weights = list())
     set.seed(1)
     result_seed1 <- twas_weights_cv(X, y, fold = 2, weight_methods = weight_methods_test)
     set.seed(1)
@@ -301,7 +301,7 @@ test_that("twas_weights_cv handles errors appropriately", {
         susie_weights = function(X, y, ...) rnorm(ncol(X)),
         glmnet_weights = function(X, y, ...) runif(ncol(X))
     )
-    weight_methods_test <- list(susie_weights = c("init_prior_sd"), glmnet_weights = c("init_prior_sd"))
+    weight_methods_test <- list(susie_weights = list(), glmnet_weights = list())
     expect_error(twas_weights_cv(X, y, fold = NULL), "fold.*sample_partitions")
     expect_error(twas_weights_cv(X, y, fold = "invalid"), "positive integer")
     expect_error(twas_weights_cv(X, y, fold = -1), "positive integer")
@@ -338,7 +338,7 @@ test_that("twas_weights handles errors appropriately", {
         susie_weights = function(X, y, ...) rnorm(ncol(X)),
         glmnet_weights = function(X, y, ...) runif(ncol(X))
     )
-    weight_methods_test <- list(susie_weights = c("init_prior_sd"), glmnet_weights = c("init_prior_sd"))
+    weight_methods_test <- list(susie_weights = list(), glmnet_weights = list())
     expect_error(twas_weights(matrix(rnorm(4, nrow=2)), matrix(rnorm(2, nrow=1))), "unused argument")
     expect_error(twas_weights(X, y), "weight_methods")
 })

@@ -726,7 +726,7 @@ test_that("uap: twas_weights_pipeline receives correct cv_folds and sample_parti
     susie = function(...) fake_fit,
     postprocess_finemapping_fits = function(...) fake_post,
     format_finemapping_output = function(post, primary_method) post,
-    twas_weights_pipeline = function(X, Y, susie_fit, cv_folds, max_cv_variants,
+    twas_weights_pipeline = function(X, Y, fitted_models, cv_folds, max_cv_variants,
                                      cv_threads, sample_partition) {
       captured_cv_folds <<- cv_folds
       captured_partition <<- sample_partition

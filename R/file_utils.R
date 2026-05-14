@@ -1161,8 +1161,25 @@ load_regional_association_data <- function(genotype, # PLINK file
   data_list <- add_Y_residuals(data_list, conditions, scale_residuals)
   ## Get residue X for each of condition and its mean and sd
   data_list <- add_X_residuals(data_list, scale_residuals)
-  # Get X matrix for union of samples
-  X <- prepare_X_matrix(geno, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff)
+  # Get X matrix for union of samples.
+  # Short-circuit when there's only one condition: the per-condition X computed in
+  # prepare_data_list already operates on the same sample set (the single condition's
+  # common_complete_samples, which is itself a subset of rownames(geno)) and applies
+  # the same MAF/imiss/var thresholds with the same MAC cutoff scaling, so the union
+  # X is bit-equivalent to data_list$X[[1]]. Skipping the redundant filter_X call saves
+  # work and avoids a duplicate "N out of M total variants dropped" log line.
+  if (length(data_list$X) == 1) {
+    X <- data_list$X[[1]]
+    variants <- str_split_fixed(colnames(X), ":", 3)
+    message(paste0(
+      "Dimension of input genotype data is ", nrow(X), " rows and ",
+      ncol(X), " columns for genomic region of ",
+      variants[1, 1], ":", min(as.integer(variants[, 2])), "-",
+      max(as.integer(variants[, 2]))
+    ))
+  } else {
+    X <- prepare_X_matrix(geno, data_list, imiss_cutoff, maf_cutoff, mac_cutoff, xvar_cutoff)
+  }
   parsed_region <- if (!is.null(region)) parse_region(region) else NULL
   ## residual_Y: a list of y either vector or matrix (CpG for example), and they need to match with residual_X in terms of which samples are missing.
   ## residual_X: is a list of R conditions each is a matrix, with list names being the names of conditions, column names being SNP names and row names being sample names.
