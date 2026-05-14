@@ -44,10 +44,11 @@ susie_rss_pipeline(
 
 \item{min_abs_corr}{Minimum absolute correlation for CS purity (default: 0.8).}
 
-\item{R_finite}{Controls variance inflation to account for finite reference LD.
-Passed to \code{susieR::susie_rss()}.}
+\item{R_finite}{Controls variance inflation to account for estimating
+the R matrix from a finite reference panel. NULL (default): no
+variance inflation. Passed directly to susie_rss.}
 
-\item{R_mismatch}{LD mismatch correction method passed to \code{susieR::susie_rss()}.
+\item{R_mismatch}{LD mismatch correction method passed directly to susie_rss.
 Default NULL disables mismatch correction.}
 
 \item{...}{Additional parameters passed to susie_rss (e.g., var_y).}
