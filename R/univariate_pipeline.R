@@ -22,7 +22,7 @@
 #' @param min_abs_corr Minimum absolute correlation for credible set purity filtering. Default is 0.8,
 #'   which is stricter than the susieR default of 0.5.
 #' @param twas_weights Whether to compute TWAS weights. Default is TRUE.
-#' @param sample_partition Sample partition for cross-validation. Default is NULL.
+#' @param sample_partition Optional data frame with Sample and Fold columns for cross-validation. Default is NULL.
 #' @param max_cv_variants The maximum number of variants to be included in cross-validation. Default is -1 (no limit).
 #' @param cv_folds The number of folds to use for cross-validation. Default is 5.
 #' @param cv_threads The number of threads to use for parallel computation in cross-validation. Default is 1.

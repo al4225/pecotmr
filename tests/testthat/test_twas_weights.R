@@ -1154,7 +1154,7 @@ test_that("twas_weights_pipeline: max_cv_variants subsamples colnames of X", {
     lasso_weights = function(X, y, ...) {
       w <- rep(0, ncol(X)); w[1] <- 0.5; w
     },
-    twas_weights_cv = function(X, y, fold, sample_partition, weight_methods,
+    twas_weights_cv = function(X, y, fold, sample_partitions, weight_methods,
                                max_num_variants, num_threads, variants_to_keep, ...) {
       captured_keep <<- variants_to_keep
       list(sample_partition = data.frame(Sample = rownames(X), Fold = 1),

@@ -30,6 +30,8 @@ twas_weights_pipeline(
 
 \item{cv_folds}{The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Defaults to 5.}
 
+\item{sample_partition}{Optional data frame with Sample and Fold columns for cross-validation. If NULL, a random partition is generated.}
+
 \item{weight_methods}{List of methods to use to compute weights for TWAS; along with their parameters.}
 
 \item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.}

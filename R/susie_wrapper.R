@@ -133,6 +133,8 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, run_allele
 #' @param R_finite Controls variance inflation to account for estimating
 #'   the R matrix from a finite reference panel. NULL (default): no
 #'   variance inflation. Passed directly to susie_rss.
+#' @param R_mismatch LD mismatch correction method passed directly to susie_rss.
+#'   Default NULL disables mismatch correction.
 #' @param ... Additional parameters passed to susie_rss (e.g., var_y).
 #' @return A list with post-processed SuSiE RSS results.
 #' @importFrom susieR susie_rss
@@ -146,7 +148,7 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
                                secondary_coverage = c(0.7, 0.5),
                                signal_cutoff = 0.1,
                                min_abs_corr = 0.8,
-                               R_finite = NULL, ...) {
+                               R_finite = NULL, R_mismatch = NULL, ...) {
   analysis_method <- match.arg(analysis_method)
   if (is.null(LD_mat) && is.null(X_mat)) stop("Either LD_mat or X_mat must be provided.")
   if (!is.null(LD_mat) && !is.null(X_mat)) stop("Only one of LD_mat or X_mat should be provided, not both.")
@@ -161,7 +163,7 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
   }
 
   common <- list(z = z, n = n, coverage = coverage,
-                 R_finite = R_finite, ...)
+                 R_finite = R_finite, R_mismatch = R_mismatch, ...)
   if (!is.null(X_mat)) common$X <- X_mat else common$R <- LD_mat
 
   if (analysis_method == "single_effect") {
@@ -250,7 +252,7 @@ get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "s
 #' @param min_abs_corr Minimum absolute correlation for credible set purity filtering.
 #'   Default is 0.8, which is stricter than the susieR default of 0.5. Credible sets
 #'   with purity below this threshold are excluded from the results.
-#' @param mode Specify the analysis mode: 'susie' or 'susie_rss'.
+#' @param mode Specify the analysis mode: 'susie', 'susie_rss', or 'mvsusie'.
 #' @return A list containing modified SuSiE object along with additional post-processing information.
 #' @examples
 #' # Example usage for SuSiE

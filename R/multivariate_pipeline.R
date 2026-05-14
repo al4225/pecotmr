@@ -18,7 +18,7 @@
 #' @param data_driven_prior_matrices A list of data-driven covariance matrices for mr.mash weights.
 #' @param data_driven_prior_matrices_cv A list of data-driven covariance matrices for mr.mash weights in cross-validation.
 #' @param canonical_prior_matrices If set to TRUE, will compute canonical covariance matrices and add them into the prior covariance matrix list in mrmash_wrapper. Default is TRUE.
-#' @param sample_partition Sample partition for cross-validation.
+#' @param sample_partition Optional data frame with Sample and Fold columns for cross-validation.
 #' @param mrmash_max_iter The maximum number of iterations for mr.mash. Default is 5000.
 #' @param mvsusie_max_iter The maximum number of iterations for mvSuSiE. Default is 200.
 #' @param min_cv_maf The minimum minor allele frequency for variants to be included in cross-validation. Default is 0.05.

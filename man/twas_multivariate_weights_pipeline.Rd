@@ -36,7 +36,7 @@ components in the fitted mvSuSiE object is used.}
 
 \item{cv_folds}{The number of folds to use for cross-validation. Defaults to 5. Set to 0 to skip cross-validation.}
 
-\item{sample_partition}{An optional vector specifying the partition of samples for cross-validation. If NULL, a random partition is generated.}
+\item{sample_partition}{Optional data frame with Sample and Fold columns for cross-validation. If NULL, a random partition is generated.}
 
 \item{data_driven_prior_matrices}{A list of data-driven covariance matrices for mr.mash weights. Defaults to NULL.}
 

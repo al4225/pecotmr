@@ -560,6 +560,7 @@ estimate_sparsity <- function(weight_results) {
 #' @param y A vector of phenotype measurements for each sample.
 #' @param susie_fit An object returned by the SuSiE function, containing the SuSiE model fit.
 #' @param cv_folds The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Defaults to 5.
+#' @param sample_partition Optional data frame with Sample and Fold columns for cross-validation. If NULL, a random partition is generated.
 #' @param weight_methods List of methods to use to compute weights for TWAS; along with their parameters.
 #' @param max_cv_variants The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.
 #' @param cv_threads The number of threads to use for parallel computation in cross-validation. Defaults to 1.
@@ -694,7 +695,7 @@ twas_weights_pipeline <- function(X,
       X,
       y,
       fold = cv_folds,
-      sample_partition = sample_partition,
+      sample_partitions = sample_partition,
       weight_methods = cv_weight_methods,
       max_num_variants = max_cv_variants,
       num_threads = cv_threads,
@@ -778,7 +779,7 @@ twas_weights_pipeline <- function(X,
 #'   components in the fitted mvSuSiE object is used.
 #' @param L_greedy Initial greedy number of components in mvSuSiE. Defaults to 5.
 #' @param cv_folds The number of folds to use for cross-validation. Defaults to 5. Set to 0 to skip cross-validation.
-#' @param sample_partition An optional vector specifying the partition of samples for cross-validation. If NULL, a random partition is generated.
+#' @param sample_partition Optional data frame with Sample and Fold columns for cross-validation. If NULL, a random partition is generated.
 #' @param data_driven_prior_matrices A list of data-driven covariance matrices for mr.mash weights. Defaults to NULL.
 #' @param data_driven_prior_matrices_cv A list of data-driven covariance matrices for mr.mash weights in cross-validation. Defaults to NULL.
 #' @param canonical_prior_matrices If TRUE, computes canonical covariance matrices for mr.mash. Defaults to FALSE.
@@ -896,7 +897,7 @@ twas_multivariate_weights_pipeline <- function(
     twas_cv_result <- twas_weights_cv(
       X = X, Y = Y, fold = cv_folds,
       weight_methods = weight_methods,
-      sample_partition = sample_partition,
+      sample_partitions = sample_partition,
       num_threads = cv_threads,
       max_num_variants = max_cv_variants,
       variants_to_keep = if (length(variants_for_cv) > 0) variants_for_cv else NULL,

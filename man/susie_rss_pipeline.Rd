@@ -17,6 +17,7 @@ susie_rss_pipeline(
   signal_cutoff = 0.1,
   min_abs_corr = 0.8,
   R_finite = NULL,
+  R_mismatch = NULL,
   ...
 )
 }
@@ -45,6 +46,9 @@ susie_rss_pipeline(
 
 \item{R_finite}{Controls variance inflation to account for finite reference LD.
 Passed to \code{susieR::susie_rss()}.}
+
+\item{R_mismatch}{LD mismatch correction method passed to \code{susieR::susie_rss()}.
+Default NULL disables mismatch correction.}
 
 \item{...}{Additional parameters passed to susie_rss (e.g., var_y).}
 }

@@ -69,7 +69,7 @@ which is stricter than the susieR default of 0.5.}
 
 \item{twas_weights}{Whether to compute TWAS weights. Default is TRUE.}
 
-\item{sample_partition}{Sample partition for cross-validation. Default is NULL.}
+\item{sample_partition}{Optional data frame with Sample and Fold columns for cross-validation. Default is NULL.}
 
 \item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Default is -1 (no limit).}
 

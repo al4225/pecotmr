@@ -68,7 +68,7 @@ multivariate_analysis_pipeline(
 \item{min_abs_corr}{Minimum absolute correlation for credible set purity filtering. Default is 0.8,
 which is stricter than the susieR default of 0.5.}
 
-\item{sample_partition}{Sample partition for cross-validation.}
+\item{sample_partition}{Optional data frame with Sample and Fold columns for cross-validation.}
 
 \item{max_cv_variants}{The maximum number of variants to be included in cross-validation. Defaults to -1 which means no limit.}
 

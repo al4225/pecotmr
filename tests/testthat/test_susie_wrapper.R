@@ -594,9 +594,10 @@ test_that("susie_rss_pipeline X-mode passes X to susie_rss and computes LD from 
       list(variant_names = vnames)
     }
   )
-  result <- susie_rss_pipeline(list(z = z), X_mat = X)
+  result <- susie_rss_pipeline(list(z = z), X_mat = X, R_mismatch = "eb")
   expect_true("X" %in% names(captured_susie_args))
   expect_null(captured_susie_args$R)
+  expect_equal(captured_susie_args$R_mismatch, "eb")
   # Post-processor should have received a p x p matrix (LD computed from X)
   expect_equal(dim(captured_pp_data_x), c(p, p))
 })

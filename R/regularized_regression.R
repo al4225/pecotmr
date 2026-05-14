@@ -280,6 +280,17 @@ sdpr_weights <- function(stat, LD, ...) {
   return(weights)
 }
 
+#' Compute SuSiE TWAS weights
+#'
+#' Extracts coefficients from an existing SuSiE fit or fits `susieR::susie()`
+#' from `X` and `y` before extracting weights.
+#'
+#' @param X Genotype matrix. Required when `susie_fit` is NULL.
+#' @param y Phenotype vector. Required when `susie_fit` is NULL.
+#' @param susie_fit Optional fitted SuSiE object.
+#' @param retain_fit If TRUE, stores the fitted object as an attribute on the returned weights.
+#' @param ... Additional arguments passed to `susieR::susie()` when fitting.
+#' @return Numeric vector of variant weights.
 #' @export
 susie_weights <- function(X = NULL, y = NULL, susie_fit = NULL, retain_fit = FALSE, ...) {
   .susie_extract_weights(susie_fit, X, y,
@@ -287,6 +298,17 @@ susie_weights <- function(X = NULL, y = NULL, susie_fit = NULL, retain_fit = FAL
     retain_fit = retain_fit, ...)
 }
 
+#' Compute SuSiE-ASH TWAS weights
+#'
+#' Extracts coefficients from an existing SuSiE-ASH fit or fits `susieR::susie()`
+#' with `unmappable_effects = "ash"`.
+#'
+#' @param X Genotype matrix. Required when `susie_ash_fit` is NULL.
+#' @param y Phenotype vector. Required when `susie_ash_fit` is NULL.
+#' @param susie_ash_fit Optional fitted SuSiE-ASH object.
+#' @param retain_fit If TRUE, stores the fitted object as an attribute on the returned weights.
+#' @param ... Additional arguments passed to `susieR::susie()` when fitting.
+#' @return Numeric vector of variant weights.
 #' @export
 susie_ash_weights <- function(X = NULL, y = NULL, susie_ash_fit = NULL, retain_fit = FALSE, ...) {
   .susie_extract_weights(susie_ash_fit, X, y,
@@ -295,6 +317,17 @@ susie_ash_weights <- function(X = NULL, y = NULL, susie_ash_fit = NULL, retain_f
     retain_fit = retain_fit, ...)
 }
 
+#' Compute SuSiE-INF TWAS weights
+#'
+#' Extracts coefficients from an existing SuSiE-INF fit or fits `susieR::susie()`
+#' with `unmappable_effects = "inf"`.
+#'
+#' @param X Genotype matrix. Required when `susie_inf_fit` is NULL.
+#' @param y Phenotype vector. Required when `susie_inf_fit` is NULL.
+#' @param susie_inf_fit Optional fitted SuSiE-INF object.
+#' @param retain_fit If TRUE, stores the fitted object as an attribute on the returned weights.
+#' @param ... Additional arguments passed to `susieR::susie()` when fitting.
+#' @return Numeric vector of variant weights.
 #' @export
 susie_inf_weights <- function(X = NULL, y = NULL, susie_inf_fit = NULL, retain_fit = FALSE, ...) {
   .susie_extract_weights(susie_inf_fit, X, y,
@@ -303,6 +336,15 @@ susie_inf_weights <- function(X = NULL, y = NULL, susie_inf_fit = NULL, retain_f
     retain_fit = retain_fit, ...)
 }
 
+#' Compute mr.mash TWAS weights
+#'
+#' Extracts coefficients from an existing mr.mash fit or fits mr.mash from `X` and `Y`.
+#'
+#' @param mrmash_fit Optional fitted mr.mash object.
+#' @param X Genotype matrix. Required when `mrmash_fit` is NULL.
+#' @param Y Phenotype matrix. Required when `mrmash_fit` is NULL.
+#' @param ... Additional arguments passed to `mrmash_wrapper()` when fitting.
+#' @return Matrix of variant weights.
 #' @export
 mrmash_weights <- function(mrmash_fit = NULL, X = NULL, Y = NULL, ...) {
   if (!requireNamespace("mr.mashr", quietly = TRUE)) {
@@ -318,6 +360,21 @@ mrmash_weights <- function(mrmash_fit = NULL, X = NULL, Y = NULL, ...) {
   return(mr.mashr::coef.mr.mash(mrmash_fit)[-1, ])
 }
 
+#' Compute mvSuSiE TWAS weights
+#'
+#' Extracts coefficients from an existing mvSuSiE fit or fits `mvsusieR::mvsusie()`
+#' from `X` and `Y`.
+#'
+#' @param mvsusie_fit Optional fitted mvSuSiE object.
+#' @param X Genotype matrix. Required when `mvsusie_fit` is NULL.
+#' @param Y Phenotype matrix. Required when `mvsusie_fit` is NULL.
+#' @param prior_variance Optional mvSuSiE prior variance list.
+#' @param residual_variance Optional residual variance matrix.
+#' @param L Maximum number of components.
+#' @param L_greedy Initial greedy number of components.
+#' @param verbose If TRUE, prints mvSuSiE fitting progress.
+#' @param ... Additional arguments passed to `mvsusieR::mvsusie()` when fitting.
+#' @return Matrix of variant weights.
 #' @export
 mvsusie_weights <- function(mvsusie_fit = NULL, X = NULL, Y = NULL,
                             prior_variance = NULL, residual_variance = NULL,
