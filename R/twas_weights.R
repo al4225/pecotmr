@@ -356,7 +356,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
               args$data_driven_prior_matrices <- cv_args$data_driven_prior_matrices_cv[[j]]
             }
             if (method == "mvsusie_weights") {
-              args$prior_variance <- cv_args$reweighted_data_driven_prior_matrices_cv[[j]]
+              args$prior_variance <- cv_args$reweighted_mixture_prior_cv[[j]]
             }
           }
           weights_matrix <- do.call(method, c(list(X = X_train, Y = Y_train), args))
@@ -637,7 +637,7 @@ estimate_sparsity <- function(weight_results) {
 #' @param cv_weight_methods List of methods to use for cross-validation. If NULL, uses the same methods as weight_methods.
 #' @param ensemble Logical. If TRUE and cv_folds > 1, learn ensemble combination
 #'   weights via stacked regression (SR-TWAS). Requires at least two individual
-#'   methods to have been run and to pass the R-squared cutoff. Defaults to FALSE.
+#'   methods to have been run and to pass the R-squared cutoff. Defaults to TRUE.
 #' @param ensemble_r2_threshold Minimum cross-validated R-squared for an individual method
 #'   to be included in the ensemble. Methods below this threshold are excluded.
 #'   Defaults to 0.01.
@@ -664,7 +664,7 @@ twas_weights_pipeline <- function(X,
                                   max_cv_variants = -1,
                                   cv_threads = 1,
                                   cv_weight_methods = NULL,
-                                  ensemble = FALSE,
+                                  ensemble = TRUE,
                                   ensemble_r2_threshold = 0.01,
                                   ensemble_solver = "quadprog",
                                   ensemble_alpha = 1,
@@ -960,7 +960,7 @@ twas_multivariate_weights_pipeline <- function(
         verbose = verbose
       ),
       mvsusie_weights = list(
-        prior_variance = mnm_fit$reweighted_data_driven_prior_matrices,
+        prior_variance = mnm_fit$reweighted_mixture_prior,
         residual_variance = mnm_fit$mrmash_fitted$V,
         L = L,
         L_greedy = L_greedy,
@@ -985,7 +985,7 @@ twas_multivariate_weights_pipeline <- function(
       max_num_variants = max_cv_variants,
       variants_to_keep = if (length(variants_for_cv) > 0) variants_for_cv else NULL,
       data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,
-      reweighted_data_driven_prior_matrices_cv = mnm_fit$reweighted_data_driven_prior_matrices_cv
+      reweighted_mixture_prior_cv = mnm_fit$reweighted_mixture_prior_cv
     )
     res <- copy_twas_cv_results(res, twas_cv_result)
   }

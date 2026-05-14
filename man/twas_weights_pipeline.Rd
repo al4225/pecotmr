@@ -15,7 +15,7 @@ twas_weights_pipeline(
   max_cv_variants = -1,
   cv_threads = 1,
   cv_weight_methods = NULL,
-  ensemble = FALSE,
+  ensemble = TRUE,
   ensemble_r2_threshold = 0.01,
   ensemble_solver = "quadprog",
   ensemble_alpha = 1,
@@ -46,7 +46,7 @@ as \code{list(susie = susie_fit, susie_inf = susie_inf_fit)}.}
 
 \item{ensemble}{Logical. If TRUE and cv_folds > 1, learn ensemble combination
 weights via stacked regression (SR-TWAS). Requires at least two individual
-methods to have been run and to pass the R-squared cutoff. Defaults to FALSE.}
+methods to have been run and to pass the R-squared cutoff. Defaults to TRUE.}
 
 \item{ensemble_r2_threshold}{Minimum cross-validated R-squared for an individual method
 to be included in the ensemble. Methods below this threshold are excluded.
