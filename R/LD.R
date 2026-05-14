@@ -358,7 +358,7 @@ resolve_ld_source <- function(path) {
   if (is_vcf_path(resolved)) return(list(type = "vcf", data_path = resolved, meta_path = path))
   if (is_gds_path(resolved)) return(list(type = "gds", data_path = resolved, meta_path = path))
 
-  # Pre-computed .cor.xz blocks — verify not using 0:0 sentinel
+  # Pre-computed .cor.xz blocks - verify not using 0:0 sentinel
   if (!is.na(meta$start) && !is.na(meta$end) && meta$start == 0 && meta$end == 0) {
     stop("Metadata has start=0, end=0 but path does not resolve to genotype files: ", resolved,
          "\n  The 0:0 sentinel is only valid for whole-chromosome genotype files.")
@@ -817,7 +817,7 @@ extract_block_matrices <- function(matrix, block_metadata, variant_ids) {
 #'
 #' Three modes are available:
 #' \describe{
-#'   \item{\code{"check"}}{Diagnostic only — returns eigenvalue statistics
+#'   \item{\code{"check"}}{Diagnostic only - returns eigenvalue statistics
 #'     without modifying the matrix.}
 #'   \item{\code{"shrink"}}{Apply shrinkage toward identity:
 #'     \code{R_s = (1 - shrinkage) * R + shrinkage * I}. Simple and fast;

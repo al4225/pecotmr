@@ -1,4 +1,4 @@
-context("regularized_regression — sdpr")
+context("regularized_regression - sdpr")
 
 # ---- sdpr ----
 test_that("sdpr errors on mismatched bhat and LD dimensions", {

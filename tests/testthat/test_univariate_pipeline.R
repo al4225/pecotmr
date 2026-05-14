@@ -378,7 +378,7 @@ test_that("resolve_LD_input does not error when nSample not needed", {
 # ===========================================================================
 
 # ========================================================================
-#  SECTION 1: univariate_analysis_pipeline – pip_cutoff_to_skip branch
+#  SECTION 1: univariate_analysis_pipeline - pip_cutoff_to_skip branch
 # ========================================================================
 
 test_that("uap: pip_cutoff_to_skip > 0, no signal above threshold => returns empty list", {
@@ -450,7 +450,7 @@ test_that("uap: negative pip_cutoff_to_skip auto-computes threshold", {
 })
 
 # ========================================================================
-#  SECTION 2: univariate_analysis_pipeline – LD reference filtering
+#  SECTION 2: univariate_analysis_pipeline - LD reference filtering
 # ========================================================================
 
 test_that("uap: LD reference filtering subsets X columns and maf", {
@@ -510,7 +510,7 @@ test_that("uap: LD reference filtering also subsets X_scalar vector", {
 })
 
 # ========================================================================
-#  SECTION 3: univariate_analysis_pipeline – filter_X branch
+#  SECTION 3: univariate_analysis_pipeline - filter_X branch
 # ========================================================================
 
 test_that("uap: filter_X is invoked when imiss_cutoff is set", {
@@ -565,7 +565,7 @@ test_that("uap: filter_X with maf_cutoff active properly subsets maf and X_scala
 })
 
 # ========================================================================
-#  SECTION 4: univariate_analysis_pipeline – main analysis (susie + post)
+#  SECTION 4: univariate_analysis_pipeline - main analysis (susie + post)
 # ========================================================================
 
 test_that("uap: susie-inf initializes susie with matching greedy L", {
@@ -663,7 +663,7 @@ test_that("uap: finemapping_extra_opts are forwarded to susie", {
 })
 
 # ========================================================================
-#  SECTION 5: univariate_analysis_pipeline – TWAS weights
+#  SECTION 5: univariate_analysis_pipeline - TWAS weights
 # ========================================================================
 
 test_that("uap: twas_weights = TRUE calls twas_weights_pipeline", {
@@ -769,7 +769,7 @@ test_that("uap: twas_weights = FALSE skips twas_weights_pipeline", {
 })
 
 # ========================================================================
-#  SECTION 6: univariate_analysis_pipeline – coverage vector forwarding
+#  SECTION 6: univariate_analysis_pipeline - coverage vector forwarding
 # ========================================================================
 
 test_that("uap: coverage vector is forwarded correctly to susie and post-processing", {
@@ -826,7 +826,7 @@ test_that("uap: single coverage value => secondary_coverage is NULL", {
 })
 
 # ========================================================================
-#  SECTION 7: univariate_analysis_pipeline – combined LD + filter_X
+#  SECTION 7: univariate_analysis_pipeline - combined LD + filter_X
 # ========================================================================
 
 test_that("uap: both LD filtering and filter_X applied in sequence", {
@@ -863,7 +863,7 @@ test_that("uap: both LD filtering and filter_X applied in sequence", {
 })
 
 # ========================================================================
-#  SECTION 8: rss_analysis_pipeline – empty sumstats early return
+#  SECTION 8: rss_analysis_pipeline - empty sumstats early return
 # ========================================================================
 
 test_that("rss: empty sumstats from load_rss_data => early return", {
@@ -883,7 +883,7 @@ test_that("rss: empty sumstats from load_rss_data => early return", {
 })
 
 # ========================================================================
-#  SECTION 9: rss_analysis_pipeline – empty sumstats after preprocessing
+#  SECTION 9: rss_analysis_pipeline - empty sumstats after preprocessing
 # ========================================================================
 
 test_that("rss: empty sumstats after rss_basic_qc => early return", {
@@ -913,7 +913,7 @@ test_that("rss: empty sumstats after rss_basic_qc => early return", {
 })
 
 # ========================================================================
-#  SECTION 10: rss_analysis_pipeline – pip_cutoff_to_skip branch
+#  SECTION 10: rss_analysis_pipeline - pip_cutoff_to_skip branch
 # ========================================================================
 
 make_rss_sumstats <- function(n_variants = 5) {
@@ -1014,7 +1014,7 @@ test_that("rss: negative pip_cutoff_to_skip auto-computes threshold", {
 })
 
 # ========================================================================
-#  SECTION 11: rss_analysis_pipeline – QC + imputation + fine-mapping
+#  SECTION 11: rss_analysis_pipeline - QC + imputation + fine-mapping
 # ========================================================================
 
 test_that("rss: full pipeline with QC, imputation, and fine-mapping", {
@@ -1111,7 +1111,7 @@ test_that("rss: method name is correct for no QC", {
 })
 
 # ========================================================================
-#  SECTION 12: rss_analysis_pipeline – outlier_number stored
+#  SECTION 12: rss_analysis_pipeline - outlier_number stored
 # ========================================================================
 
 test_that("rss: outlier_number is stored in result when QC is active", {
@@ -1141,7 +1141,7 @@ test_that("rss: outlier_number is stored in result when QC is active", {
 })
 
 # ========================================================================
-#  SECTION 13: rss_analysis_pipeline – finemapping_method = NULL skips
+#  SECTION 13: rss_analysis_pipeline - finemapping_method = NULL skips
 # ========================================================================
 
 test_that("rss: finemapping_method = NULL skips fine-mapping", {
@@ -1173,7 +1173,7 @@ test_that("rss: finemapping_method = NULL skips fine-mapping", {
 })
 
 # ========================================================================
-#  SECTION 14: rss_analysis_pipeline – QC = NULL skips QC
+#  SECTION 14: rss_analysis_pipeline - QC = NULL skips QC
 # ========================================================================
 
 test_that("rss: qc_method = NULL skips quality control", {
@@ -1205,7 +1205,7 @@ test_that("rss: qc_method = NULL skips quality control", {
 })
 
 # ========================================================================
-#  SECTION 15: rss_analysis_pipeline – impute = FALSE skips imputation
+#  SECTION 15: rss_analysis_pipeline - impute = FALSE skips imputation
 # ========================================================================
 
 test_that("rss: impute = FALSE skips raiss imputation", {
@@ -1238,7 +1238,7 @@ test_that("rss: impute = FALSE skips raiss imputation", {
 })
 
 # ========================================================================
-#  SECTION 16: rss_analysis_pipeline – diagnostics branch (empty res)
+#  SECTION 16: rss_analysis_pipeline - diagnostics branch (empty res)
 # ========================================================================
 
 test_that("rss: diagnostics = TRUE with empty fine-mapping result skips diagnostics logic", {
@@ -1268,7 +1268,7 @@ test_that("rss: diagnostics = TRUE with empty fine-mapping result skips diagnost
 })
 
 # ========================================================================
-#  SECTION 17: rss_analysis_pipeline – diagnostics with CS > 1 and
+#  SECTION 17: rss_analysis_pipeline - diagnostics with CS > 1 and
 #              high p-value triggers BCR + SER re-analysis
 # ========================================================================
 
@@ -1348,7 +1348,7 @@ test_that("rss: diagnostics with 2+ CS and high p-value/corr triggers BCR and SE
 })
 
 # ========================================================================
-#  SECTION 18: rss_analysis_pipeline – diagnostics with 1 CS => SER only
+#  SECTION 18: rss_analysis_pipeline - diagnostics with 1 CS => SER only
 # ========================================================================
 
 test_that("rss: diagnostics with 1 CS triggers SER reanalysis only", {
@@ -1420,7 +1420,7 @@ test_that("rss: diagnostics with 1 CS triggers SER reanalysis only", {
 })
 
 # ========================================================================
-#  SECTION 19: rss_analysis_pipeline – diagnostics with no CS but high PIP
+#  SECTION 19: rss_analysis_pipeline - diagnostics with no CS but high PIP
 # ========================================================================
 
 test_that("rss: diagnostics with no CS but high PIP calls extract_top_pip_info", {
@@ -1489,7 +1489,7 @@ test_that("rss: diagnostics with no CS but high PIP calls extract_top_pip_info",
 })
 
 # ========================================================================
-#  SECTION 20: rss_analysis_pipeline – diagnostics with no CS and low PIP
+#  SECTION 20: rss_analysis_pipeline - diagnostics with no CS and low PIP
 # ========================================================================
 
 test_that("rss: diagnostics with no CS and no high PIP => diagnostics empty", {
@@ -1535,7 +1535,7 @@ test_that("rss: diagnostics with no CS and no high PIP => diagnostics empty", {
 })
 
 # ========================================================================
-#  SECTION 21: rss_analysis_pipeline – finemapping_opts forwarded correctly
+#  SECTION 21: rss_analysis_pipeline - finemapping_opts forwarded correctly
 # ========================================================================
 
 test_that("rss: finemapping_opts are forwarded to susie_rss_pipeline", {
@@ -1585,7 +1585,7 @@ test_that("rss: finemapping_opts are forwarded to susie_rss_pipeline", {
 })
 
 # ========================================================================
-#  SECTION 22: rss_analysis_pipeline – dentist QC method naming
+#  SECTION 22: rss_analysis_pipeline - dentist QC method naming
 # ========================================================================
 
 test_that("rss: dentist QC method generates correct method name", {
@@ -1615,7 +1615,7 @@ test_that("rss: dentist QC method generates correct method name", {
 })
 
 # ========================================================================
-#  SECTION 23: univariate_analysis_pipeline – null imiss/maf cutoffs skip filter_X
+#  SECTION 23: univariate_analysis_pipeline - null imiss/maf cutoffs skip filter_X
 # ========================================================================
 
 test_that("uap: both imiss_cutoff and maf_cutoff NULL skips filter_X", {
@@ -1644,7 +1644,7 @@ test_that("uap: both imiss_cutoff and maf_cutoff NULL skips filter_X", {
 })
 
 # ========================================================================
-#  SECTION 24: rss_analysis_pipeline – diagnostics with get_susie_result
+#  SECTION 24: rss_analysis_pipeline - diagnostics with get_susie_result
 #              returning NULL
 # ========================================================================
 
@@ -1679,7 +1679,7 @@ test_that("rss: diagnostics with get_susie_result returning NULL => diagnostics 
 })
 
 # ========================================================================
-#  SECTION 25: rss_analysis_pipeline – diagnostics with CS but CS count <= 1
+#  SECTION 25: rss_analysis_pipeline - diagnostics with CS but CS count <= 1
 #              and null block_cs_metrics (no high PIP either)
 # ========================================================================
 
@@ -1733,7 +1733,7 @@ test_that("rss: diagnostics with null/empty block_cs_metrics => no additional an
 })
 
 # ========================================================================
-#  SECTION 26: rss_analysis_pipeline – diagnostics with CS > 1 but low
+#  SECTION 26: rss_analysis_pipeline - diagnostics with CS > 1 but low
 #              p-value and low corr => no BCR/SER triggered
 # ========================================================================
 
@@ -1811,7 +1811,7 @@ test_that("rss: diagnostics with 2 CS but low p-value and low corr => no extra a
 })
 
 # ========================================================================
-#  SECTION 27: rss_analysis_pipeline – diagnostics with CS > 1 and
+#  SECTION 27: rss_analysis_pipeline - diagnostics with CS > 1 and
 #              high corr (> 0.5) but low p-value still triggers BCR+SER
 # ========================================================================
 

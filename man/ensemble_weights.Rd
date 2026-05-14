@@ -75,7 +75,7 @@ multiple-testing penalty for running several.
 For single-dataset usage, pass one \code{twas_weights_cv()} result directly.
 For multi-dataset ensemble (e.g., combining cell types or reference panels
 such as CUMC1 + MIT), pass a list of \code{twas_weights_cv()} results along
-with a list of observed Y vectors — this learns a single joint set of
+with a list of observed Y vectors - this learns a single joint set of
 coefficients.
 
 

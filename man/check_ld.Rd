@@ -45,7 +45,7 @@ matrices internally via their own regularization.
 \details{
 Three modes are available:
 \describe{
-  \item{\code{"check"}}{Diagnostic only — returns eigenvalue statistics
+  \item{\code{"check"}}{Diagnostic only - returns eigenvalue statistics
     without modifying the matrix.}
   \item{\code{"shrink"}}{Apply shrinkage toward identity:
     \code{R_s = (1 - shrinkage) * R + shrinkage * I}. Simple and fast;

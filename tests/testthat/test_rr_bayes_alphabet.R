@@ -1,4 +1,4 @@
-context("regularized_regression — bayes_alphabet")
+context("regularized_regression - bayes_alphabet")
 
 # ---- bayes_alphabet_weights ----
 test_that("bayes_alphabet_weights errors on dimension mismatch", {

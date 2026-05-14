@@ -1,4 +1,4 @@
-context("regularized_regression — mrash")
+context("regularized_regression - mrash")
 
 # ---- mrash_weights ----
 test_that("mrash_weights calls lasso_weights as default beta.init", {

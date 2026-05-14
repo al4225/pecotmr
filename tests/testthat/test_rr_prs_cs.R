@@ -1,4 +1,4 @@
-context("regularized_regression — prs_cs")
+context("regularized_regression - prs_cs")
 
 # ---- prs_cs ----
 test_that("prs_cs errors on invalid LD input", {

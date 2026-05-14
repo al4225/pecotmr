@@ -1,4 +1,4 @@
-context("regularized_regression — dispatch verification")
+context("regularized_regression - dispatch verification")
 
 # ---- dispatch verification ----
 # These tests use local_mocked_bindings to replace the inner function with a

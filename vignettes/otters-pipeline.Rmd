@@ -162,7 +162,7 @@ print(results_df[, c("gene", "method", "twas_z", "twas_pval", "n_snps")])
 ## Extending with additional learners
 
 Any function following the `*_weights(stat, LD, ...)` convention can be
-added. No code changes needed — methods are dispatched dynamically.
+added. No code changes needed - methods are dispatched dynamically.
 
 ### Example: adding mr.ash.rss
 
@@ -208,9 +208,9 @@ weights <- otters_weights(
 aligned to the same variants and allele orientation. For real data, use
 pecotmr's QC functions before calling the pipeline:
 
-- `allele_qc()` — match alleles between summary stats and LD reference,
+- `allele_qc()` - match alleles between summary stats and LD reference,
   handle strand flips (A/T, C/G), negate effects for allele-flipped SNPs
-- `rss_basic_qc()` — full QC pipeline including allele matching, indel
+- `rss_basic_qc()` - full QC pipeline including allele matching, indel
   filtering, and region-based variant selection
 
 ## References

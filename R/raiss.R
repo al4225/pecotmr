@@ -28,7 +28,7 @@ raiss_single_matrix <- function(ref_panel, known_zscores, LD_matrix, lamb = 0.01
   knowns_id <- intersect(known_zscores$variant_id, ref_panel$variant_id)
   knowns <- which(ref_panel$variant_id %in% knowns_id)
   unknowns <- which(!ref_panel$variant_id %in% knowns_id)
-  
+
   # Handle edge cases
   if (length(knowns) == 0) {
     if (verbose) message("No known variants found, cannot perform imputation.")
@@ -132,7 +132,7 @@ raiss_single_matrix_from_X <- function(ref_panel, known_zscores, X, lamb = 0.01,
   }
 
   # Extract known columns for SVD (unavoidable copy for LAPACK).
-  # We do NOT copy X_i — instead we compute X' %*% [w|U] on the full X
+  # We do NOT copy X_i - instead we compute X' %*% [w|U] on the full X
   # and index the unknown rows, saving O(n*m) memory.
   X_t <- X[, knowns, drop = FALSE]
   zt <- known_zscores$z
@@ -534,14 +534,14 @@ filter_raiss_output <- function(zscores, R2_threshold = 0.6, minimum_ld = 5, ver
   # Print report
   if (verbose) {
     max_label_length <- max(nchar(c(
-      "Variants before filter:", 
-      "Non-imputed variants:", 
-      "Imputed variants:", 
-      "Variants filtered because of low LD score:", 
-      "Variants filtered because of low R2:", 
+      "Variants before filter:",
+      "Non-imputed variants:",
+      "Imputed variants:",
+      "Variants filtered because of low LD score:",
+      "Variants filtered because of low R2:",
       "Remaining variants after filter:"
     )))
-    
+
     format_line <- function(label, value) {
       sprintf("%-*s %d", max_label_length, paste0(label, ":"), value)
     }

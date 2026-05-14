@@ -1,4 +1,4 @@
-context("regularized_regression — dpr")
+context("regularized_regression - dpr")
 
 # ---- dpr_weights ----
 test_that("dpr_weights computes weights with VB fitting method", {

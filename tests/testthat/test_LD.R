@@ -1238,7 +1238,7 @@ test_that("load_LD_matrix loads multiple precomputed blocks", {
 test_that("load_LD_matrix with n_sample for precomputed blocks with freq data", {
   # The 9-column bim format includes allele_freq, variance, n_nomiss;
   # the 6-column bim does not. With 6-col bim and no allele_freq,
-  # n_sample cannot compute variance — ref_panel has base columns only.
+  # n_sample cannot compute variance - ref_panel has base columns only.
   meta_file <- file.path(geno_test_data_dir, "ld_meta_precomp_nsamp_tmp.tsv")
   on.exit(unlink(meta_file), add = TRUE)
   writeLines(paste("chrom", "start", "end", "path", sep = "\t"), meta_file)

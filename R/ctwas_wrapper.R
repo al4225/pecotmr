@@ -6,7 +6,7 @@
 #' [read_bim()] internally, mapping its output to the legacy column names.
 #'
 #' @param bim_file_path Path to a PLINK \code{.bim} file (or a \code{.bed}
-#'   file — the \code{.bim} extension is resolved automatically).
+#'   file - the \code{.bim} extension is resolved automatically).
 #'
 #' @return A data.frame with columns \code{chrom}, \code{id}, \code{GD},
 #'   \code{pos}, \code{A1}, \code{A2}. Variant IDs are normalised via
@@ -110,11 +110,11 @@ trim_ctwas_variants <- function(region_data, twas_weight_cutoff = 1e-5, cs_min_c
     high_pip_variants <- names(context_pip[context_pip > min_pip_cutoff])[names(context_pip[context_pip > min_pip_cutoff]) %in% rownames(weight_list$wgt)]
     selected_variants_by_context <- unique(c(selected_variants_by_context, high_pip_variants))
 
-    # prioritize SNPs based on PIP if max_num_variants different from Inf 
+    # prioritize SNPs based on PIP if max_num_variants different from Inf
     available_variants <- intersect(rownames(weight_list$wgt), names(context_pip))
     prioritized <- unique(c(selected_variants_by_context, setdiff(available_variants, selected_variants_by_context)))
     prioritized <- prioritized[order(-context_pip[prioritized])]
-    selected_variants_by_context <- head(prioritized, max_num_variants) 
+    selected_variants_by_context <- head(prioritized, max_num_variants)
     weight_list$wgt <- weight_list$wgt[selected_variants_by_context, , drop = FALSE]
     return(weight_list)
   }

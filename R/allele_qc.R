@@ -70,7 +70,7 @@ match_ref_panel <- function(target_data, ref_variants, col_to_flip = NULL,
   ref_variants <- variant_id_to_df(ref_variants)
 
   # Remove redundant columns that would conflict with the merge.
-  # Keep A2/A1 in target_data — they become A2.target/A1.target after merge.
+  # Keep A2/A1 in target_data - they become A2.target/A1.target after merge.
   columns_to_remove <- c("chromosome", "position", "ref", "alt", "variant_id")
   if (any(columns_to_remove %in% colnames(target_data))) {
 	 target_data <- select(target_data, -any_of(columns_to_remove))
@@ -81,7 +81,7 @@ match_ref_panel <- function(target_data, ref_variants, col_to_flip = NULL,
   match_result <- sanitize_names(match_result)
 
   if (nrow(match_result) == 0) {
-	warning("No matching variants found between target data and reference variants.") 
+	warning("No matching variants found between target data and reference variants.")
 	return(list(target_data_qced = match_result, qc_summary = match_result))
   }
     # match target & ref by chrom and position
@@ -142,7 +142,7 @@ match_ref_panel <- function(target_data, ref_variants, col_to_flip = NULL,
   # Remove all unnecessary columns used to determine qc status
   # Finally keep those variants with FLAG keep = TRUE
   result <- match_result[match_result$keep, , drop = FALSE]
-	
+
   if (remove_dups) {
 	dups <- duplicated(result[, c("chrom", "pos", "variants_id_qced")])
 	if (any(dups)) {

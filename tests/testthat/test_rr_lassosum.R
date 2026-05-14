@@ -1,4 +1,4 @@
-context("regularized_regression — lassosum_rss")
+context("regularized_regression - lassosum_rss")
 
 # ---- lassosum_rss ----
 test_that("lassosum_rss errors on invalid LD input", {

@@ -19,7 +19,7 @@ generate_mock_data <- function(seed=1, num_pips = 1000, num_susie_fits = 2) {
       prior_variance = runif(p)
     )
   }
-  
+
   # Simulate multiple SuSiEFit objects
   n_susie_fits <- num_susie_fits
   susie_fits <- replicate(n_susie_fits, simulate_susiefit(n_gwas_pip, 10), simplify = FALSE)
@@ -111,7 +111,7 @@ test_that("compute_qtl_enrichment calls real C++ enrichment code and returns exp
     fit1 = list(pip = pip, alpha = alpha, prior_variance = c(0.5, 0.3))
   )
 
-  # Call without mocking — exercises the real C++ code
+  # Call without mocking - exercises the real C++ code
   res <- suppressWarnings(
     compute_qtl_enrichment(gwas_pip, susie_fits,
                            num_gwas = 5000, pi_qtl = 0.5,

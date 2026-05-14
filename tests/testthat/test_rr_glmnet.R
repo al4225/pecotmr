@@ -1,4 +1,4 @@
-context("regularized_regression — glmnet")
+context("regularized_regression - glmnet")
 
 # ---- glmnet_weights ----
 test_that("glmnet_weights computes LASSO weights", {

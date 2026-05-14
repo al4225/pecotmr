@@ -1,4 +1,4 @@
-context("regularized_regression — mrmash / mvsusie")
+context("regularized_regression - mrmash / mvsusie")
 
 # ---- mrmash_weights ----
 test_that("mrmash_weights errors when mr.mashr package is not available", {

@@ -198,7 +198,7 @@ compute_sldsc_annot_sd <- function(target_anno_dir, frqfile_dir = NULL,
 #'   Previously this made `allm + snplist` runs report a ~8x too-small M_ref and
 #'   hence a ~8x too-small tau*.
 #'
-#' @param target_anno_dir Character or NULL. Fallback only — directory of
+#' @param target_anno_dir Character or NULL. Fallback only - directory of
 #'   `.l2.ldscore` files. Used only when `frqfile_dir` is unavailable.
 #' @param frqfile_dir Character or NULL. Directory of PLINK `.frq` files; the
 #'   preferred (recommended) source of M_ref.
@@ -535,7 +535,7 @@ meta_sldsc_random <- function(per_trait_estimates, category,
 #'   `target` column and `tau*`-block column name in the output is renamed;
 #'   `params$target_categories` then holds the labels and
 #'   `params$target_categories_orig` keeps the original polyfun names. When NULL
-#'   (default), nothing is renamed — the original `.results` category names are
+#'   (default), nothing is renamed - the original `.results` category names are
 #'   used as before.
 #'
 #' @return List with `per_trait`, `meta` (three frames), `params`.

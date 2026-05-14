@@ -579,7 +579,7 @@ test_that("mr_format returns null df when get_nested_element errors for top_loci
   bad_susie <- list(susie_results = list(
     condition1 = list(
       region_info = list(region_name = "Gene_Test")
-      # no top_loci key — forces tryCatch error path
+      # no top_loci key - forces tryCatch error path
     )
   ))
   result <- mr_format(

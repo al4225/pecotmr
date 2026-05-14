@@ -12,7 +12,7 @@ compute_sldsc_M_ref(
 )
 }
 \arguments{
-\item{target_anno_dir}{Character or NULL. Fallback only — directory of
+\item{target_anno_dir}{Character or NULL. Fallback only - directory of
 `.l2.ldscore` files. Used only when `frqfile_dir` is unavailable.}
 
 \item{frqfile_dir}{Character or NULL. Directory of PLINK `.frq` files; the

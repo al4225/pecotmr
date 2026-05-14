@@ -69,7 +69,7 @@ check_qvalue_exists <- function(file_path, qvalue_pattern) {
     }
     cols <- strsplit(header, "\t")[[1]]
   }
-  
+
   q_cols <- grep(qvalue_pattern, cols, value = TRUE)
   return(length(q_cols) > 0)
 }
@@ -80,20 +80,20 @@ extract_chrom_pos_from_variant_id <- function(data) {
     message("Column 'chrom' already exists, no extraction needed")
     return(data)
   }
-  
+
   if (!"variant_id" %in% names(data)) {
     stop("Neither 'chrom' nor 'variant_id' column found in data")
   }
-  
+
   message("Extracting 'chrom' and 'pos' from 'variant_id' column")
-  
+
   # Extract chrom and pos from variant_id (format: chr1:14677_G_A)
   data <- data %>%
     mutate(
       chrom = gsub("^(chr[^:]+):.*$", "\\1", variant_id),
       pos = as.integer(gsub("^[^:]+:([0-9]+)_.*$", "\\1", variant_id))
     )
-  
+
   # Check if extraction was successful
   if (any(is.na(data$pos)) || any(data$chrom == data$variant_id)) {
     warning("Some variant_id entries could not be parsed. Check format: expected 'chrX:position_ref_alt'")
@@ -104,7 +104,7 @@ extract_chrom_pos_from_variant_id <- function(data) {
       print(head(problematic, 5))
     }
   }
-  
+
   message(sprintf("Successfully extracted chrom and pos for %d variants", nrow(data)))
   return(data)
 }
@@ -113,57 +113,57 @@ extract_chrom_pos_from_variant_id <- function(data) {
 compute_and_save_qvalues <- function(params) {
   setwd(params$workdir)
   message("Computing q-values for QTL files...")
-  
+
   molecular_id_col <- params$molecular_id_col %||% "molecular_trait_object_id"
-  
+
   # Get all QTL files
   qtl_files <- list.files(pattern = params$qtl_pattern, full.names = TRUE)
   if (length(qtl_files) == 0) {
     message("No QTL files found matching pattern")
     return(list(files = qtl_files, data_list = list(), need_qvalue_computation = FALSE))
   }
-  
+
   # Check if qvalue column exists in first file
   qvalue_exists <- check_qvalue_exists(qtl_files[1], params$qvalue_pattern)
-  
+
   if (qvalue_exists) {
     message("Q-value column already exists, skipping q-value computation")
     return(list(files = qtl_files, data_list = list(), need_qvalue_computation = FALSE))
   }
-  
+
   message("Q-value column not found, computing q-values...")
-  
+
   # Parse additional p-value columns
   additional_pvalue_cols <- parse_additional_pvalue_cols(params$additional_pvalue_cols)
-  
+
   # Get column info from first file
   column_info <- extract_column_names(qtl_files[1], params$pvalue_pattern, params$qvalue_pattern)
   main_pvalue_col <- column_info$p_col
   main_qvalue_col <- column_info$q_col
-  
-  message(sprintf("Processing %d files with main p-value column: %s → %s", 
+
+  message(sprintf("Processing %d files with main p-value column: %s -> %s",
                   length(qtl_files), main_pvalue_col, main_qvalue_col))
-  
+
   if (length(additional_pvalue_cols) > 0) {
     additional_qvalue_cols <- gsub("^pval", "qval", additional_pvalue_cols)
-    message(sprintf("Additional p-value columns: %s → %s", 
+    message(sprintf("Additional p-value columns: %s -> %s",
                     paste(additional_pvalue_cols, collapse = ", "),
                     paste(additional_qvalue_cols, collapse = ", ")))
   }
-  
+
   # Determine if we need p-value filtering
   apply_pvalue_filter <- params$pvalue_cutoff < 1
   if (apply_pvalue_filter) {
     message(sprintf("Will apply p-value filter < %g during processing to save memory", params$pvalue_cutoff))
   }
-  
-  # Process each file: read → compute qvalue → save complete → filter → store filtered
+
+  # Process each file: read -> compute qvalue -> save complete -> filter -> store filtered
   filtered_data_list <- list()
-  
+
   for (i in seq_along(qtl_files)) {
     file_path <- qtl_files[i]
     message(sprintf("Processing file %d/%d: %s", i, length(qtl_files), basename(file_path)))
-    
+
     # Step 1: Read file
     if (grepl("\\.parquet$", file_path)) {
       data <- read_parquet(file_path)
@@ -175,7 +175,7 @@ compute_and_save_qvalues <- function(params) {
         data <- data.table::fread(file_path)
       }
     }
-    
+
     # Step 2: Compute q-values for each molecular trait
     data_with_qvalues <- data %>%
       # Extract chrom/pos from variant_id if needed
@@ -183,12 +183,12 @@ compute_and_save_qvalues <- function(params) {
       group_by(!!sym(molecular_id_col)) %>%
       do({
         trait_data <- .
-        
+
         # Compute q-value for main p-value column
         if (main_pvalue_col %in% names(trait_data)) {
           trait_data[[main_qvalue_col]] <- safe_qvalue(trait_data[[main_pvalue_col]])$qvalues
         }
-        
+
         # Compute q-values for additional p-value columns
         for (pval_col in additional_pvalue_cols) {
           if (pval_col %in% names(trait_data)) {
@@ -199,22 +199,22 @@ compute_and_save_qvalues <- function(params) {
             warning(sprintf("P-value column '%s' not found in file %s", pval_col, basename(file_path)))
           }
         }
-        
+
         trait_data
       }) %>%
       ungroup()
-    
+
     # Print completion message once per file
     if (length(additional_pvalue_cols) > 0) {
       for (pval_col in additional_pvalue_cols) {
         qval_col <- gsub("^pval", "qval", pval_col)
-        message(sprintf("Computed %s → %s for %s", pval_col, qval_col, basename(file_path)))
+        message(sprintf("Computed %s -> %s for %s", pval_col, qval_col, basename(file_path)))
       }
     }
-    
+
     # Step 3: Save complete data with qvalues (always as .tsv.gz)
     message(sprintf("Saving computed q-values for file: %s", basename(file_path)))
-    
+
     # Always save as .tsv.gz regardless of input format
     if (grepl("\\.parquet$", file_path)) {
       output_file <- sub("\\.parquet$", ".qvalue_computed.tsv.gz", file_path)
@@ -223,25 +223,25 @@ compute_and_save_qvalues <- function(params) {
     } else {
       output_file <- sub("\\.(tsv|txt)$", ".qvalue_computed.tsv.gz", file_path)
     }
-    
+
     write_delim(data_with_qvalues, gzfile(output_file), delim = "\t")
     message(sprintf("Saved complete q-value computed file: %s", basename(output_file)))
-    
+
     # Step 4: Apply p-value filtering immediately to save memory
     if (apply_pvalue_filter) {
       pre_filter_rows <- nrow(data_with_qvalues)
       filtered_data <- data_with_qvalues %>%
         filter(!!sym(main_pvalue_col) < params$pvalue_cutoff)
       post_filter_rows <- nrow(filtered_data)
-      message(sprintf("Applied p-value filter: %d → %d rows", pre_filter_rows, post_filter_rows))
-      
+      message(sprintf("Applied p-value filter: %d -> %d rows", pre_filter_rows, post_filter_rows))
+
       # Store the filtered data for rbind
       filtered_data_list[[i]] <- filtered_data
     } else {
       # No filtering needed, store all data
       filtered_data_list[[i]] <- data_with_qvalues
     }
-    
+
     # Step 5: Clean up memory
     rm(data, data_with_qvalues)
     if (apply_pvalue_filter && exists("filtered_data")) {
@@ -249,7 +249,7 @@ compute_and_save_qvalues <- function(params) {
     }
     gc() # Force garbage collection to free memory
   }
-  
+
   return(list(files = qtl_files, data_list = filtered_data_list, need_qvalue_computation = TRUE))
 }
 
@@ -286,7 +286,7 @@ find_common_prefix <- function(files) {
   if (length(common_parts) == 0) {
     # Try to find common prefix before "chr" pattern
     chr_pattern <- "_chr\\d+|chr\\d+"
-    
+
     # For each file, find position of chromosome pattern
     chr_positions <- sapply(filenames, function(f) {
       match_pos <- regexpr(chr_pattern, f)
@@ -296,13 +296,13 @@ find_common_prefix <- function(files) {
         return(nchar(f))  # If no chr pattern, use full length
       }
     })
-    
+
     # If all files have chr pattern at roughly same position
     if (all(chr_positions > 0)) {
       min_pos <- min(chr_positions)
       # Extract common prefix up to the chromosome part
       prefixes <- sapply(filenames, function(f) substr(f, 1, min_pos))
-      
+
       # Find the longest common prefix among these
       if (length(unique(prefixes)) == 1) {
         # All prefixes are the same
@@ -320,10 +320,10 @@ find_common_prefix <- function(files) {
           }
         }
       }
-      
+
       # Remove trailing underscores or dots
       common_prefix <- sub("[._]+$", "", common_prefix)
-      
+
       if (nchar(common_prefix) > 0) {
         return(common_prefix)
       }
@@ -440,7 +440,7 @@ extract_column_names <- function(file_path, pvalue_pattern = "pvalue", qvalue_pa
     }
     cols <- strsplit(header, "\t")[[1]]
   }
-  
+
   column_info <- list(
     all_columns = cols
   )
@@ -563,11 +563,11 @@ calculate_filtered_variant_counts <- function(filename, params, gene_coords) {
   # NEW: Check if cis_window is 0 to skip cis-window filtering
   if (params$cis_window == 0) {
     message("cis_window is 0, skipping cis-window filtering, only applying MAF filter...")
-    
+
     # Apply only MAF filtering
     filtered_data <- qtl_data %>%
       filter(pmin(!!sym(params$af_col), 1 - !!sym(params$af_col)) > params$maf_cutoff)
-      
+
   } else {
     # Original logic: apply both MAF and cis-window filtering
     message("Calculating feature positions and cis windows...")
@@ -628,7 +628,7 @@ load_n_variants_data <- function(params, gene_coords) {
     base_name <- sub(cleaned_pattern, "", qtl_files[i])
     n_variants_suffix <- sub("\\*", "", params$n_variants_suffix)
     n_variants_suffix <- sub("\\$$", "", n_variants_suffix)
-    
+
     # MODIFIED: Handle cis_window = 0 case differently in filename generation
     if (params$cis_window == 0) {
       # When cis_window is 0, don't include window information in filename
@@ -646,7 +646,7 @@ load_n_variants_data <- function(params, gene_coords) {
         n_variants_suffix
       )
     }
-    
+
     n_variants_files[i] <- paste0(base_name, ".", n_variants_suffix)
   }
 
@@ -684,7 +684,7 @@ load_qtl_data <- function(params, load_n_variants = FALSE) {
   # Compute q-values first if qvalue column doesn't exist
   qvalue_result <- compute_and_save_qvalues(params)
   files <- qvalue_result$files
-  
+
   if (length(files) == 0) {
     stop("No pair files found")
   }
@@ -697,13 +697,13 @@ load_qtl_data <- function(params, load_n_variants = FALSE) {
     message("Using pre-computed and pre-filtered q-value data")
     # Combine all computed and filtered data
     data <- data.table::rbindlist(qvalue_result$data_list, use.names = TRUE, fill = TRUE)
-    
+
     # Extract chrom/pos from variant_id if needed, then standardize
     data <- data %>%
       extract_chrom_pos_from_variant_id() %>%
       mutate(chrom = standardize_chrom(chrom))
-    
-    message(sprintf("Combined data from %d files: %d total rows", 
+
+    message(sprintf("Combined data from %d files: %d total rows",
                     length(qvalue_result$data_list), nrow(data)))
   } else {
     # Read from original files
@@ -1217,7 +1217,7 @@ identify_qvalue_snps <- function(data, params, base_data = NULL) {
   if (!q_value_col %in% names(snp_data)) {
     stop(sprintf("Q-value column '%s' not found. Please ensure q-values are computed before analysis.", q_value_col))
   }
-  
+
   message(sprintf("Using existing q-value column '%s' for qvalue-based QTL identification", q_value_col))
   significant_snps <- snp_data %>%
     filter(!!sym(q_value_col) < params$fdr_threshold)
@@ -1242,7 +1242,7 @@ hierarchical_multiple_testing_correction <- function(params) {
   if (is.null(params$molecular_id_col)) {
     params$molecular_id_col <- "molecular_trait_object_id"
   }
-  
+
   # Step 0: Load all data upfront
   data <- list()
   data$regional_data <- load_regional_data(params)
@@ -1443,7 +1443,7 @@ archive_files <- function(params) {
 
       message(sprintf("Found %d files to archive", length(existing_files)))
       message(sprintf("Archive directory is: %s", archive_dir))
-      
+
       if (length(existing_files) > 0) {
         # Create archive directory
         if (!dir.exists(archive_dir)) {
@@ -1491,7 +1491,7 @@ archive_files <- function(params) {
       invokeRestart("muffleWarning")
     }
   )
-  
+
   if (length(warn_log) > 0) {
     message("Captured warnings:")
     for (i in seq_along(warn_log)) {
@@ -1501,7 +1501,7 @@ archive_files <- function(params) {
 
   # Restore original working directory
   setwd(original_wd)
-  
+
   return(invisible(warn_log))
 }
 

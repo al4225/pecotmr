@@ -467,7 +467,7 @@ test_that("pipeline: ensemble_r2_threshold filters methods for ensemble", {
   beta <- c(1.5, -1.0, 0.8, rep(0, p - 3))
   y <- as.numeric(X %*% beta + rnorm(n, sd = 0.5))
 
-  # Run with very low threshold — both methods should pass
+  # Run with very low threshold - both methods should pass
   msgs_low <- testthat::capture_messages(
     res_low <- twas_weights_pipeline(
       X, y, cv_folds = 3,
@@ -478,7 +478,7 @@ test_that("pipeline: ensemble_r2_threshold filters methods for ensemble", {
   )
   expect_false(is.null(res_low$ensemble))
 
-  # Run with very high threshold — neither should pass
+  # Run with very high threshold - neither should pass
   msgs_high <- testthat::capture_messages(
     res_high <- twas_weights_pipeline(
       X, y, cv_folds = 3,

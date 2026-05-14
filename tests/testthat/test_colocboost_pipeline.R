@@ -1783,7 +1783,7 @@ test_that("qc_regional_data: named pip_cutoff_to_skip_ind works with context nam
 test_that("qc_regional_data: named pip_cutoff_to_skip_ind fills missing contexts with 0", {
   region_data <- make_individual_region_data(n = 20, p = 8, n_contexts = 3, n_events = 2)
 
-  # Only specify cutoff for ctx1 — ctx2 and ctx3 should default to 0
+  # Only specify cutoff for ctx1 - ctx2 and ctx3 should default to 0
   result <- pecotmr:::qc_regional_data(
     region_data,
     pip_cutoff_to_skip_ind = c(ctx1 = 0),
@@ -1831,7 +1831,7 @@ test_that("qc_regional_data: pip_cutoff_to_skip_ind lookup works when X and Y ha
     sumstat_data = NULL
   )
 
-  # Should not error — ctx3 in X has no pip_cutoff entry, defaults to 0
+  # Should not error - ctx3 in X has no pip_cutoff entry, defaults to 0
   result <- pecotmr:::qc_regional_data(
     region_data,
     pip_cutoff_to_skip_ind = 0,

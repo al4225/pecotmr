@@ -35,7 +35,7 @@ check_genotype_result <- function(result, expected_nrow = n_samples, expected_nc
   expect_true(all(vals == round(vals)), label = paste(label, "dosage integer-valued"))
 }
 
-# ─── PLINK1 (snpStats) ───────────────────────────────────────────────────────
+# --- PLINK1 (snpStats) -------------------------------------------------------
 
 test_that("load_plink1_data loads all variants", {
   skip_if_not_installed("snpStats")
@@ -70,7 +70,7 @@ test_that("load_plink1_data errors on empty region", {
   expect_error(load_plink1_data(plink_prefix, region = "chr1:1-2"), class = "NoSNPsError")
 })
 
-# ─── PLINK2 (pgenlibr) ───────────────────────────────────────────────────────
+# --- PLINK2 (pgenlibr) -------------------------------------------------------
 
 test_that("load_plink2_data loads all variants", {
   skip_if_not_installed("pgenlibr")
@@ -103,7 +103,7 @@ test_that("load_plink2_data errors on empty region", {
   expect_error(load_plink2_data(plink_prefix, region = "chr1:1-2"), class = "NoSNPsError")
 })
 
-# ─── VCF (VariantAnnotation) ─────────────────────────────────────────────────
+# --- VCF (VariantAnnotation) -------------------------------------------------
 
 test_that("load_vcf_data loads all variants", {
   skip_if_not_installed("VariantAnnotation")
@@ -133,7 +133,7 @@ test_that("load_vcf_data errors on empty region", {
   expect_error(suppressWarnings(load_vcf_data(vcf_path, region = "chr1:1-2")))
 })
 
-# ─── GDS (SNPRelate) ─────────────────────────────────────────────────────────
+# --- GDS (SNPRelate) ---------------------------------------------------------
 
 test_that("load_gds_data loads all variants", {
   skip_if_not_installed("SNPRelate")
@@ -165,7 +165,7 @@ test_that("load_gds_data errors on empty region", {
   expect_error(load_gds_data(gds_path, region = "chr1:1-2"), class = "NoSNPsError")
 })
 
-# ─── Cross-format consistency ─────────────────────────────────────────────────
+# --- Cross-format consistency -------------------------------------------------
 
 test_that("all formats return same dimensions and positions", {
   skip_if_not_installed("snpStats")
@@ -201,7 +201,7 @@ test_that("PLINK1 and PLINK2 return consistent alleles", {
   expect_equal(p1$variant_info$A2, p2$variant_info$A2)
 })
 
-# ─── load_genotype_region (dispatch) ─────────────────────────────────────────
+# --- load_genotype_region (dispatch) -----------------------------------------
 
 test_that("load_genotype_region dispatches to VCF by extension", {
   skip_if_not_installed("VariantAnnotation")

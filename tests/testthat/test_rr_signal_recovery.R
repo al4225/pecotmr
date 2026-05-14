@@ -1,4 +1,4 @@
-context("regularized_regression — signal recovery")
+context("regularized_regression - signal recovery")
 
 # ============================================================================
 # Signal recovery tests for X-y wrappers

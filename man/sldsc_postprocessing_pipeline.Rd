@@ -42,7 +42,7 @@ polyfun `.results` names `c("ANNOT_1_0", "ANNOT_2_0")`). When given, every
 `target` column and `tau*`-block column name in the output is renamed;
 `params$target_categories` then holds the labels and
 `params$target_categories_orig` keeps the original polyfun names. When NULL
-(default), nothing is renamed — the original `.results` category names are
+(default), nothing is renamed - the original `.results` category names are
 used as before.}
 }
 \value{

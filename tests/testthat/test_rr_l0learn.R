@@ -1,4 +1,4 @@
-context("regularized_regression — l0learn")
+context("regularized_regression - l0learn")
 
 # ---- l0learn_weights ----
 test_that("l0learn_weights computes weights with default L0 penalty", {

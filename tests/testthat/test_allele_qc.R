@@ -413,7 +413,7 @@ test_that("allele_qc warns and removes duplicate variants", {
 
 # ---- duplicated variant IDs error (allele_qc.R line 180) ----
 test_that("allele_qc errors on duplicated variant IDs with different values when remove_dups is FALSE", {
-  # Two rows at same position, same alleles, but different beta — when not removing dups
+  # Two rows at same position, same alleles, but different beta - when not removing dups
   target <- data.frame(
     chrom = c(1, 1), pos = c(100, 100),
     A2 = c("A", "A"), A1 = c("G", "G"),

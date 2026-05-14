@@ -672,7 +672,7 @@ qc_regional_data <- function(region_data,
           }
         }
 
-        # Quality control — remove outlier variants (needs R)
+        # Quality control - remove outlier variants (needs R)
         if (!is.null(qc_method) && qc_method != "none") {
           qc_results <- summary_stats_qc(sumstat$sumstats, LD_data_for_qc, n = n, method = qc_method)
           sumstat$sumstats <- qc_results$sumstats

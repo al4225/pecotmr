@@ -1,4 +1,4 @@
-context("regularized_regression — susie")
+context("regularized_regression - susie")
 
 # ---- init_prior_sd ----
 test_that("init_prior_sd returns correct number of values with expected properties", {

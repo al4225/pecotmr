@@ -19,8 +19,8 @@ DENTIST (Detecting Errors iN analyses of summary staTISTics) performs quality co
 
 The `pecotmr` package provides a pure R implementation of DENTIST that can be used in two ways:
 
-1. **Windowed QC** via `dentist()` — takes summary statistics and an LD matrix, runs windowed imputation with configurable window sizes.
-2. **Single-window QC** via `dentist_single_window()` — takes z-scores and an LD matrix (or genotype matrix) directly, suitable for integration into analysis pipelines.
+1. **Windowed QC** via `dentist()` - takes summary statistics and an LD matrix, runs windowed imputation with configurable window sizes.
+2. **Single-window QC** via `dentist_single_window()` - takes z-scores and an LD matrix (or genotype matrix) directly, suitable for integration into analysis pipelines.
 
 We also demonstrate how the alternative **SLALOM + RAISS** pipeline achieves comparable QC and imputation on the same data, giving users two complementary approaches for summary statistics quality control.
 
@@ -278,7 +278,7 @@ cat(sprintf("95%% credible set size: %d\n", length(slalom_result$summary$cs_95))
 
 ### Run RAISS on SLALOM-flagged outliers
 
-RAISS imputes z-scores for "unknown" variants using LD with "known" variants. First, we use SLALOM's outlier flags to define which variants to re-impute — this is the natural SLALOM+RAISS pipeline.
+RAISS imputes z-scores for "unknown" variants using LD with "known" variants. First, we use SLALOM's outlier flags to define which variants to re-impute - this is the natural SLALOM+RAISS pipeline.
 
 ```{r run-raiss-slalom}
 # Helper: run RAISS given a set of outlier flags

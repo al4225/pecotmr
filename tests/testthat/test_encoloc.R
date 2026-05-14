@@ -888,7 +888,7 @@ test_that("coloc_wrapper passes through xqtl_raw_data when xqtl_finemapping_obj 
   ))
   saveRDS(gwas_data, gwas_file)
 
-  # xQTL file WITHOUT nesting — xqtl_finemapping_obj = NULL means use raw_data directly
+  # xQTL file WITHOUT nesting - xqtl_finemapping_obj = NULL means use raw_data directly
   xqtl_data <- list(list(
     lbf_variable = matrix(rnorm(3 * p), nrow = 3),
     V = rep(1, 3),

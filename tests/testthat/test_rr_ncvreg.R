@@ -1,4 +1,4 @@
-context("regularized_regression — ncvreg")
+context("regularized_regression - ncvreg")
 
 # ---- ncvreg_weights / scad_weights / mcp_weights ----
 test_that("ncvreg_weights computes weights with SCAD penalty", {

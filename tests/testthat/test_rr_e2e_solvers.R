@@ -1,4 +1,4 @@
-context("regularized_regression — end-to-end solver verification")
+context("regularized_regression - end-to-end solver verification")
 
 # ---- end-to-end solver verification ----
 # These tests mock the *external-package* solver and assert that the

@@ -315,7 +315,7 @@ test_that("load_genotype_region applies stochastic inversion with explicit sidec
   meta_path <- file.path(td, "test_harmonize_regions.stochastic_meta.tsv")
   smeta <- pecotmr:::read_stochastic_meta(meta_path)
 
-  # Load with explicit sidecar — inversion transforms the integer dosages
+  # Load with explicit sidecar - inversion transforms the integer dosages
   res <- load_genotype_region(
     file.path(td, "test_harmonize_regions"),
     return_variant_info = TRUE,

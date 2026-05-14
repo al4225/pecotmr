@@ -1,7 +1,7 @@
-context("regularized_regression — mr_ash_rss")
+context("regularized_regression - mr_ash_rss")
 
 # ============================================================================
-# mr_ash_rss_weights — dispatch + smoke test
+# mr_ash_rss_weights - dispatch + smoke test
 # ============================================================================
 
 test_that("mr_ash_rss_weights forwards arguments to susieR::mr.ash.rss", {

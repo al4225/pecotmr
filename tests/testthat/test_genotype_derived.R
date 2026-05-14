@@ -12,7 +12,7 @@ load_test_genotype <- function() {
   load_genotype_region(plink_prefix, return_variant_info = TRUE)
 }
 
-# ─── compute_LD ──────────────────────────────────────────────────────────────
+# --- compute_LD --------------------------------------------------------------
 
 test_that("compute_LD produces valid sample correlation matrix", {
   skip_if_not_installed("pgenlibr")
@@ -49,7 +49,7 @@ test_that("compute_LD errors on NULL input", {
   expect_error(compute_LD(NULL), "X must be provided")
 })
 
-# ─── check_ld ────────────────────────────────────────────────────────────────
+# --- check_ld ----------------------------------------------------------------
 
 test_that("check_ld diagnoses real LD matrix correctly", {
   skip_if_not_installed("pgenlibr")
@@ -97,7 +97,7 @@ test_that("check_ld shrink repairs perturbed LD matrix", {
   expect_equal(result$method_applied, "shrink")
 })
 
-# ─── ld_prune_by_correlation ─────────────────────────────────────────────────
+# --- ld_prune_by_correlation -------------------------------------------------
 
 test_that("ld_prune_by_correlation prunes correlated variants", {
   skip_if_not_installed("pgenlibr")
@@ -128,7 +128,7 @@ test_that("ld_prune_by_correlation with high threshold keeps most columns", {
   expect_true(ncol(result$X.new) >= ncol(X) * 0.4)
 })
 
-# ─── ld_clump_by_score ───────────────────────────────────────────────────────
+# --- ld_clump_by_score -------------------------------------------------------
 
 test_that("ld_clump_by_score returns valid indices", {
   skip_if_not_installed("pgenlibr")
@@ -146,7 +146,7 @@ test_that("ld_clump_by_score returns valid indices", {
   expect_true(all(keep %in% seq_len(ncol(geno$X))))
 })
 
-# ─── enforce_design_full_rank ────────────────────────────────────────────────
+# --- enforce_design_full_rank ------------------------------------------------
 
 test_that("enforce_design_full_rank handles genotype matrix with covariates", {
   skip_if_not_installed("pgenlibr")
@@ -162,7 +162,7 @@ test_that("enforce_design_full_rank handles genotype matrix with covariates", {
   expect_equal(qr(full_design)$rank, ncol(full_design))
 })
 
-# ─── filter_variants_by_ld_reference ─────────────────────────────────────────
+# --- filter_variants_by_ld_reference -----------------------------------------
 
 test_that("filter_variants_by_ld_reference filters against PLINK reference via metadata", {
   skip_if_not_installed("pgenlibr")
@@ -193,7 +193,7 @@ test_that("filter_variants_by_ld_reference filters against PLINK reference via m
   expect_true(length(result$data) <= length(variant_ids))
 })
 
-# ─── resolve_LD_input (internal) ─────────────────────────────────────────────
+# --- resolve_LD_input (internal) ---------------------------------------------
 
 test_that("resolve_LD_input computes LD from genotype matrix", {
   skip_if_not_installed("pgenlibr")
@@ -234,7 +234,7 @@ test_that("resolve_LD_input errors when R given without nSample and needed", {
                "nSample is required")
 })
 
-# ─── dentist_single_window ───────────────────────────────────────────────────
+# --- dentist_single_window ---------------------------------------------------
 
 test_that("dentist_single_window works with genotype matrix X", {
   skip_if_not_installed("pgenlibr")
@@ -275,7 +275,7 @@ test_that("dentist_single_window detects injected outliers", {
   expect_true(any(result$outlier))
 })
 
-# ─── dentist (multi-window) ─────────────────────────────────────────────────
+# --- dentist (multi-window) -------------------------------------------------
 
 test_that("dentist works with genotype matrix and sum_stat data frame", {
   skip_if_not_installed("pgenlibr")

@@ -89,7 +89,7 @@ read_stochastic_meta <- function(path, format = NULL) {
   format <- match.arg(format, c("afreq", "generic"))
 
   if (format == "afreq") {
-    # read_afreq expects a prefix, not a full path — strip the .afreq[.zst] suffix
+    # read_afreq expects a prefix, not a full path - strip the .afreq[.zst] suffix
     prefix <- sub("\\.afreq(\\.zst)?$", "", path)
     af <- read_afreq(prefix)
     if (is.null(af) || !all(c("u_min", "u_max") %in% colnames(af))) return(NULL)
@@ -737,7 +737,7 @@ load_gds_data <- function(path, region = NULL, keep_indel = TRUE,
     snp_subset <- snp_id[in_region]
   }
 
-  # Read genotype matrix (samples × variants, ALT dosage 0/1/2)
+  # Read genotype matrix (samples x variants, ALT dosage 0/1/2)
   geno <- SNPRelate::snpgdsGetGeno(gds, snp.id = snp_subset,
                                     with.id = TRUE, verbose = FALSE)
   X <- geno$genotype
@@ -1353,7 +1353,7 @@ clean_context_names <- function(context, gene) {
 load_twas_weights <- function(weight_db_files, conditions = NULL,
                               variable_name_obj = c("preset_variants_result", "variant_names"),
                               susie_obj = c("preset_variants_result", "susie_result_trimmed"),
-                              twas_weights_table = "twas_weights") {  
+                              twas_weights_table = "twas_weights") {
   ## Internal function to load and validate data from RDS files
   load_and_validate_data <- function(weight_db_files, conditions, variable_name_obj) {
     all_data <- do.call(c, lapply(unname(weight_db_files), function(rds_file) {
@@ -1372,7 +1372,7 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
             warning(paste0("No matching context layers found in ", rds_file, ". Skipping this file."))
             return(NULL)
           }
-          
+
           db[[gene]] <- db[[gene]][matching_contexts]
         }
       } else {
@@ -1996,22 +1996,22 @@ batch_load_twas_weights <- function(twas_weights_results, meta_data_df, max_memo
 # Function to filter a single credible set based on coverage and purity
 #' @importFrom susieR susie_get_cs
 #' @importFrom purrr map_lgl
-#' @export      
+#' @export
 get_filter_lbf_index <- function(susie_obj, coverage = 0.5, size_factor = 0.5) {
   susie_obj$V <- NULL  # ensure no filtering by estimated prior
 
   # Get CS list with coverage
   cs_list <- susie_get_cs(susie_obj, coverage = coverage, dedup = FALSE)
-  
+
   # Total number of variants
   total_variants <- ncol(susie_obj$alpha)
-  
+
   # Maximum allowed CS size to be considered 'concentrated'
   max_size <- total_variants * coverage * size_factor
-  
+
   # Identify which CSs are 'concentrated enough'
   keep_idx <- map_lgl(cs_list$cs, ~ length(.x) < max_size)
-  
+
   # Extract the CS indices that pass the filter
   cs_index <- which(keep_idx) %>% names %>% gsub("L","", .) %>% as.numeric
 

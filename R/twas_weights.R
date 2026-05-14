@@ -785,13 +785,9 @@ twas_weights_pipeline <- function(X,
     )
 
     # Ensemble learning: learn optimal method combination via stacked regression
-    if (ensemble) {
-      n_methods <- length(cv_weight_methods)
-      if (n_methods < 2) {
-        message("Ensemble TWAS requires at least 2 weight methods to be used. ",
-                "Only ", n_methods, " method was provided. Skipping ensemble.")
-      } else if (!is.null(res$twas_cv_result$performance)) {
-        # Extract R² for each method from CV performance table
+    if (isTRUE(ensemble) && length(cv_weight_methods) > 1) {
+      if (!is.null(res$twas_cv_result$performance)) {
+        # Extract R-squared for each method from CV performance table
         method_rsq <- vapply(res$twas_cv_result$performance, function(perf) {
           perf[1, "rsq"]
         }, numeric(1))
@@ -801,12 +797,12 @@ twas_weights_pipeline <- function(X,
         n_passing <- sum(passing)
 
         if (n_passing < 2) {
-          passed_info <- paste0("  ", names(method_rsq), ": R² = ",
+          passed_info <- paste0("  ", names(method_rsq), ": R-squared = ",
                                 round(method_rsq, 4),
                                 ifelse(passing, " (passed)", " (failed)"))
           message("Ensemble TWAS could not be run because fewer than 2 methods ",
-                  "passed the R² cutoff of ", ensemble_r2_threshold, ".\n",
-                  "Method R² values:\n",
+                  "passed the R-squared cutoff of ", ensemble_r2_threshold, ".\n",
+                  "Method R-squared values:\n",
                   paste(passed_info, collapse = "\n"))
         } else {
           passing_base <- names(method_rsq)[passing]
@@ -1176,7 +1172,7 @@ twas_multivariate_weights_pipeline <- function(
 #' For single-dataset usage, pass one \code{twas_weights_cv()} result directly.
 #' For multi-dataset ensemble (e.g., combining cell types or reference panels
 #' such as CUMC1 + MIT), pass a list of \code{twas_weights_cv()} results along
-#' with a list of observed Y vectors — this learns a single joint set of
+#' with a list of observed Y vectors - this learns a single joint set of
 #' coefficients.
 #'
 #' @param cv_results Output of \code{\link{twas_weights_cv}}, with \code{$prediction}
@@ -1422,7 +1418,7 @@ ensemble_weights <- function(cv_results, Y, twas_weight_list = NULL,
 
   if (n_valid < 1) {
     stop("All methods have zero-variance predictions. Cannot compute ensemble. ",
-         "This typically means all methods returned zero weights — check that ",
+         "This typically means all methods returned zero weights - check that ",
          "the input data has sufficient signal.")
   }
 

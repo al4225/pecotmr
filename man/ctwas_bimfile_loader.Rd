@@ -8,7 +8,7 @@ ctwas_bimfile_loader(bim_file_path)
 }
 \arguments{
 \item{bim_file_path}{Path to a PLINK \code{.bim} file (or a \code{.bed}
-file — the \code{.bim} extension is resolved automatically).}
+file - the \code{.bim} extension is resolved automatically).}
 }
 \value{
 A data.frame with columns \code{chrom}, \code{id}, \code{GD},

@@ -1,4 +1,4 @@
-context("regularized_regression — bglr")
+context("regularized_regression - bglr")
 
 # ---- bglr_weights / bayes_b_weights / b_lasso_weights ----
 test_that("bglr_weights computes weights with BayesB model", {
