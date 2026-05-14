@@ -108,6 +108,16 @@ format_cs_column <- function(coverage, method) {
   fit
 }
 
+prepare_susie_from_inf_args <- function(args, susie_inf_fit, refine_default = NULL) {
+  L <- args[["L"]]
+  if (is.null(L)) L <- length(susie_inf_fit$V)
+  if (is.null(args[["refine"]]) && !is.null(refine_default)) args[["refine"]] <- refine_default
+  args[["unmappable_effects"]] <- "none"
+  args[["model_init"]] <- susie_inf_fit
+  if (!is.null(args[["L_greedy"]])) args[["L_greedy"]] <- min(length(susie_inf_fit$V), L)
+  args
+}
+
 fit_susie_inf_then_susie <- function(X, y, args = list(),
                                      susie_inf_args = list(),
                                      susie_args = list(),
@@ -127,16 +137,8 @@ fit_susie_inf_then_susie <- function(X, y, args = list(),
   susie_inf_fit <- .set_finemapping_fit_class(susie_inf_fit, "susie_inf")
 
   if (is.null(susie_fit)) {
-    fit_args <- modifyList(args, susie_args)
-    L <- fit_args[["L"]]
-    if (is.null(L)) L <- length(susie_inf_fit$V)
-    if (is.null(fit_args[["refine"]])) fit_args[["refine"]] <- TRUE
-    fit_args <- modifyList(fit_args, list(
-      X = X, y = y, unmappable_effects = "none",
-      model_init = susie_inf_fit,
-      L_greedy = if (is.null(fit_args[["L_greedy"]])) NULL else min(length(susie_inf_fit$V), L)
-    ))
-    susie_fit <- do.call(susie, fit_args)
+    fit_args <- prepare_susie_from_inf_args(modifyList(args, susie_args), susie_inf_fit, refine_default = TRUE)
+    susie_fit <- do.call(susie, c(list(X = X, y = y), fit_args))
   }
   susie_fit <- .set_finemapping_fit_class(susie_fit, "susie")
 

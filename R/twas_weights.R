@@ -155,12 +155,7 @@
   if (has_susie &&
       is.null(weight_methods[["susie_weights"]][["susie_fit"]]) &&
       !is.null(susie_inf_fit)) {
-    weight_methods[["susie_weights"]][["model_init"]] <- susie_inf_fit
-    L <- weight_methods[["susie_weights"]][["L"]]
-    if (is.null(L)) L <- length(susie_inf_fit$V)
-    if (!is.null(weight_methods[["susie_weights"]][["L_greedy"]])) {
-      weight_methods[["susie_weights"]][["L_greedy"]] <- min(length(susie_inf_fit$V), L)
-    }
+    weight_methods[["susie_weights"]] <- prepare_susie_from_inf_args(weight_methods[["susie_weights"]], susie_inf_fit)
   }
   weight_methods
 }
