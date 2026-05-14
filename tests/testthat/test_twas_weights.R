@@ -40,6 +40,12 @@ make_fake_susie_fit <- function(p = 10, L = 3, inf = FALSE) {
   fit
 }
 
+mock_susie <- function(...) {
+  args <- list(...)
+  L <- if (is.null(args$L)) 3 else args$L
+  make_fake_susie_fit(ncol(args$X), L = L, inf = identical(args$unmappable_effects, "inf"))
+}
+
 # ===========================================================================
 #
 #  .twas_method_lookup
@@ -743,6 +749,7 @@ test_that("twas_weights_pipeline: returns list with expected structure (mocked)"
   y_vec <- as.numeric(d$Y)
 
   local_mocked_bindings(
+    susie = mock_susie,
     enet_weights  = function(X, y, ...) rep(0.1, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0.2, ncol(X)),
     bayes_r_weights = function(X, y, ...) rep(0, ncol(X)),
@@ -776,6 +783,7 @@ test_that("twas_weights_pipeline: twas_weights contains all default methods", {
   y_vec <- as.numeric(d$Y)
 
   local_mocked_bindings(
+    susie = mock_susie,
     enet_weights  = function(X, y, ...) rep(0.1, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0.2, ncol(X)),
     bayes_r_weights = function(X, y, ...) rep(0, ncol(X)),
@@ -805,6 +813,7 @@ test_that("twas_weights_pipeline: predictions have _predicted suffix", {
   y_vec <- as.numeric(d$Y)
 
   local_mocked_bindings(
+    susie = mock_susie,
     enet_weights  = function(X, y, ...) rep(0, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0, ncol(X)),
     bayes_r_weights = function(X, y, ...) rep(0, ncol(X)),
@@ -834,6 +843,7 @@ test_that("twas_weights_pipeline: cv_folds=0 skips cross-validation", {
   y_vec <- as.numeric(d$Y)
 
   local_mocked_bindings(
+    susie = mock_susie,
     enet_weights  = function(X, y, ...) rep(0, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0, ncol(X)),
     bayes_r_weights = function(X, y, ...) rep(0, ncol(X)),
@@ -884,6 +894,7 @@ test_that("twas_weights_pipeline: accepts 'fast_default' preset string", {
   y_vec <- as.numeric(d$Y)
 
   local_mocked_bindings(
+    susie = mock_susie,
     enet_weights  = function(X, y, ...) rep(0, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0, ncol(X)),
     mrash_weights = function(X, y, ...) rep(0, ncol(X)),
@@ -999,38 +1010,42 @@ test_that("twas_weights_pipeline: fitted_models are injected into SuSiE-family w
   expect_true(susie_inf_received_fit)
 })
 
-test_that("twas_weights_pipeline: SuSiE-inf fit initializes ordinary SuSiE when ordinary fit is absent", {
+test_that("twas_weights: SuSiE-inf is fitted before and initializes ordinary SuSiE", {
   d <- make_data(n = 50, p = 10)
   y_vec <- as.numeric(d$Y)
-  fake_susie_inf <- make_fake_susie_fit(p = 10, L = 7, inf = TRUE)
-  captured_model_init <- NULL
-  captured_L_greedy <- NULL
+  susie_calls <- list()
 
   local_mocked_bindings(
+    susie = function(...) {
+      args <- list(...)
+      susie_calls[[length(susie_calls) + 1]] <<- args
+      make_fake_susie_fit(
+        p = ncol(args$X),
+        L = if (identical(args$unmappable_effects, "inf")) 7 else args$L,
+        inf = identical(args$unmappable_effects, "inf")
+      )
+    },
     susie_inf_weights = function(X, y, ...) rep(0, ncol(X)),
     susie_weights = function(X, y, ...) {
-      args <- list(...)
-      captured_model_init <<- args$model_init
-      captured_L_greedy <<- args$L_greedy
       rep(0, ncol(X))
     }
   )
 
-  result <- twas_weights_pipeline(
+  result <- twas_weights(
     d$X,
     y_vec,
     weight_methods = list(
-      susie_weights = list(L = 20, L_greedy = 3),
+      susie_weights = list(L = 5, L_greedy = 3),
       susie_inf_weights = list()
-    ),
-    fitted_models = list(susie_inf = fake_susie_inf),
-    cv_folds = 0,
-    estimate_pi = FALSE
+    )
   )
 
-  expect_equal(names(result$twas_weights), c("susie_weights", "susie_inf_weights"))
-  expect_true("susie_inf" %in% class(captured_model_init))
-  expect_equal(captured_L_greedy, 7)
+  expect_equal(names(result), c("susie_weights", "susie_inf_weights"))
+  expect_length(susie_calls, 2)
+  expect_equal(susie_calls[[1]]$unmappable_effects, "inf")
+  expect_equal(susie_calls[[2]]$unmappable_effects, "none")
+  expect_true("susie_inf" %in% class(susie_calls[[2]]$model_init))
+  expect_equal(susie_calls[[2]]$L_greedy, 5)
 })
 
 test_that("twas_weights_pipeline: weight dimensions match input", {

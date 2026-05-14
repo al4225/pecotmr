@@ -4,7 +4,14 @@
 \alias{twas_weights}
 \title{Run multiple TWAS weight methods}
 \usage{
-twas_weights(X, Y, weight_methods, num_threads = 1, retain_fits = FALSE)
+twas_weights(
+  X,
+  Y,
+  weight_methods,
+  num_threads = 1,
+  fitted_models = NULL,
+  retain_fits = FALSE
+)
 }
 \arguments{
 \item{X}{A matrix of samples by features, where each row represents a sample and each column a feature.}
@@ -18,6 +25,8 @@ methods in the list can be either univariate (applied to each column of Y) or mu
 If set to -1, the function uses all available cores.
 If set to 0 or 1, no parallel processing is performed.
 If set to 2 or more, parallel processing is enabled with that many threads.}
+
+\item{fitted_models}{Optional named list of fitted SuSiE-family models.}
 }
 \value{
 A list where each element is named after a method and contains the weight matrix produced by that method.

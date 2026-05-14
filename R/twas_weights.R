@@ -112,10 +112,15 @@
   intermediate
 }
 
-.inject_susie_family_fits <- function(weight_methods, fitted_models = NULL) {
-  if (is.null(fitted_models)) return(weight_methods)
-  susie_fit <- fitted_models[["susie"]]
-  susie_inf_fit <- fitted_models[["susie_inf"]]
+.prepare_susie_weight_methods <- function(X, Y, weight_methods, fitted_models = NULL) {
+  if (is.vector(Y)) Y <- matrix(Y, ncol = 1)
+  if (is.null(fitted_models)) fitted_models <- list()
+  has_susie <- !is.null(weight_methods[["susie_weights"]])
+  has_susie_inf <- !is.null(weight_methods[["susie_inf_weights"]])
+  susie_fit <- if (has_susie) weight_methods[["susie_weights"]][["susie_fit"]] else NULL
+  susie_inf_fit <- if (has_susie_inf) weight_methods[["susie_inf_weights"]][["susie_inf_fit"]] else NULL
+  if (is.null(susie_fit)) susie_fit <- fitted_models[["susie"]]
+  if (is.null(susie_inf_fit)) susie_inf_fit <- fitted_models[["susie_inf"]]
 
   if (!is.null(susie_fit)) {
     susie_fit <- .set_finemapping_fit_class(susie_fit, "susie")
@@ -124,21 +129,38 @@
     susie_inf_fit <- .set_finemapping_fit_class(susie_inf_fit, "susie_inf")
   }
 
-  if (!is.null(susie_inf_fit) && !is.null(weight_methods[["susie_inf_weights"]])) {
+  if (has_susie && has_susie_inf && ncol(Y) == 1 &&
+      is.null(susie_fit) && is.null(susie_inf_fit)) {
+    fit_arg_names <- c("susie_fit", "susie_inf_fit", "retain_fit")
+    fits <- fit_susie_inf_then_susie(
+      X,
+      Y[, 1],
+      args = weight_methods[["susie_weights"]][setdiff(names(weight_methods[["susie_weights"]]), fit_arg_names)],
+      susie_inf_args = modifyList(
+        list(convergence_method = "pip"),
+        weight_methods[["susie_inf_weights"]][setdiff(names(weight_methods[["susie_inf_weights"]]), fit_arg_names)]
+      ),
+      fitted_models = list(susie = susie_fit, susie_inf = susie_inf_fit)
+    )
+    susie_fit <- fits[["susie"]]
+    susie_inf_fit <- fits[["susie_inf"]]
+  }
+
+  if (!is.null(susie_inf_fit) && has_susie_inf) {
     weight_methods[["susie_inf_weights"]][["susie_inf_fit"]] <- susie_inf_fit
   }
-  if (!is.null(susie_fit) && !is.null(weight_methods[["susie_weights"]])) {
+  if (!is.null(susie_fit) && has_susie) {
     weight_methods[["susie_weights"]][["susie_fit"]] <- susie_fit
   }
-  if (!is.null(weight_methods[["susie_weights"]]) &&
+  if (has_susie &&
       is.null(weight_methods[["susie_weights"]][["susie_fit"]]) &&
       !is.null(susie_inf_fit)) {
     weight_methods[["susie_weights"]][["model_init"]] <- susie_inf_fit
     L <- weight_methods[["susie_weights"]][["L"]]
     if (is.null(L)) L <- length(susie_inf_fit$V)
-    weight_methods[["susie_weights"]][["L_greedy"]] <- .model_init_l_greedy(
-      susie_inf_fit, L, weight_methods[["susie_weights"]][["L_greedy"]]
-    )
+    if (!is.null(weight_methods[["susie_weights"]][["L_greedy"]])) {
+      weight_methods[["susie_weights"]][["L_greedy"]] <- min(length(susie_inf_fit$V), L)
+    }
   }
   weight_methods
 }
@@ -322,9 +344,10 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
       X_train <- filter_X_with_Y(X_train, Y_train, missing_rate_thresh = 1, maf_thresh = NULL)
       valid_columns <- colnames(X_train)
       # X_test <- X_test[, valid_columns, drop=FALSE]
+      fold_weight_methods <- .prepare_susie_weight_methods(X_train, Y_train, weight_methods)
 
-      setNames(lapply(names(weight_methods), function(method) {
-        args <- weight_methods[[method]]
+      setNames(lapply(names(fold_weight_methods), function(method) {
+        args <- fold_weight_methods[[method]]
 
         if (method %in% multivariate_weight_methods) {
           # Apply multivariate method to entire Y for this fold
@@ -355,7 +378,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
           rownames(Y_pred) <- rownames(X_test)
           return(Y_pred)
         }
-      }), names(weight_methods))
+      }), names(fold_weight_methods))
     }
 
     if (num_cores >= 2) {
@@ -441,6 +464,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #'        If set to -1, the function uses all available cores.
 #'        If set to 0 or 1, no parallel processing is performed.
 #'        If set to 2 or more, parallel processing is enabled with that many threads.
+#' @param fitted_models Optional named list of fitted SuSiE-family models.
 #' @return A list where each element is named after a method and contains the weight matrix produced by that method.
 #'
 #' @export
@@ -448,7 +472,8 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map exec
 #' @importFrom rlang !!!
-twas_weights <- function(X, Y, weight_methods, num_threads = 1, retain_fits = FALSE) {
+twas_weights <- function(X, Y, weight_methods, num_threads = 1,
+                         fitted_models = NULL, retain_fits = FALSE) {
   if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
     stop("X must be a matrix and Y must be a matrix or a vector.")
   }
@@ -469,6 +494,12 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, retain_fits = FA
   num_cores <- ifelse(num_threads == -1, availableCores(), num_threads)
   num_cores <- min(num_cores, availableCores())
 
+  valid_columns <- .nonzero_var_columns(X)
+  X_filtered <- as.matrix(X[, valid_columns, drop = FALSE])
+  weight_methods <- .prepare_susie_weight_methods(
+    X_filtered, Y, weight_methods, fitted_models
+  )
+
   compute_method_weights <- function(method_name, weight_methods) {
     # Hardcoded vector of multivariate methods
     multivariate_weight_methods <- c("mrmash_weights", "mvsusie_weights")
@@ -478,10 +509,6 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1, retain_fits = FA
     if (retain_fits && "retain_fit" %in% names(formals(method_name))) {
       args$retain_fit <- TRUE
     }
-
-    # Remove columns with zero variance
-    valid_columns <- .nonzero_var_columns(X)
-    X_filtered <- as.matrix(X[, valid_columns, drop = FALSE])
 
     method_fit <- NULL
     if (method_name %in% multivariate_weight_methods) {
@@ -686,11 +713,11 @@ twas_weights_pipeline <- function(X,
 
     if (length(remaining_fn_names) > 0) {
       remaining_methods <- weight_methods[remaining_fn_names]
-      remaining_methods <- .inject_susie_family_fits(remaining_methods, fitted_models)
       remaining_weights <- twas_weights(
         X,
         y,
-        weight_methods = remaining_methods
+        weight_methods = remaining_methods,
+        fitted_models = fitted_models
       )
       res$twas_weights <- c(mrash_weights, remaining_weights)
     } else {
@@ -706,7 +733,8 @@ twas_weights_pipeline <- function(X,
     res$twas_weights <- twas_weights(
       X,
       y,
-      weight_methods = .inject_susie_family_fits(weight_methods, fitted_models)
+      weight_methods = weight_methods,
+      fitted_models = fitted_models
     )
   }
   res$twas_weights <- lapply(res$twas_weights, function(w) {

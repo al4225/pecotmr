@@ -492,7 +492,7 @@ test_that("postprocess_finemapping_fits stores analysis_script when load_script 
     load_script = function() "fake_script_content"
   )
   post <- postprocess_finemapping_fits(
-    fits = list(susie_rss = .set_finemapping_fit_class(fake_output, "susie_rss")),
+    fits = list(susie_rss = pecotmr:::.set_finemapping_fit_class(fake_output, "susie_rss")),
     data_x = R,
     data_y = list(z = rnorm(p)),
     coverage = 0.95
@@ -509,7 +509,7 @@ test_that("postprocess_finemapping_fits keeps all effects when V is NULL", {
   R <- diag(p)
   colnames(R) <- rownames(R) <- names(fake_output$pip)
   post <- postprocess_finemapping_fits(
-    fits = list(susie_rss = .set_finemapping_fit_class(fake_output, "susie_rss")),
+    fits = list(susie_rss = pecotmr:::.set_finemapping_fit_class(fake_output, "susie_rss")),
     data_x = R,
     data_y = list(z = rnorm(p)),
     coverage = 0.95
@@ -556,7 +556,7 @@ test_that("postprocess_finemapping_fits stores outcome_names, coef, and clfsr fo
   )
 
   post <- postprocess_finemapping_fits(
-    fits = list(mvsusie = .set_finemapping_fit_class(fake_output, "mvsusie")),
+    fits = list(mvsusie = pecotmr:::.set_finemapping_fit_class(fake_output, "mvsusie")),
     data_x = X,
     data_y = NULL,
     X_scalar = 1, y_scalar = 1,

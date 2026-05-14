@@ -112,32 +112,18 @@ univariate_analysis_pipeline <- function(
   st <- proc.time()
   res <- list()
 
-  # SuSiE-inf analysis
   message("Fitting SuSiE-inf model on input data ...")
-  base_susie_args <- list(X = X, y = Y, L = L, L_greedy = L_greedy, coverage = coverage[1])
-  susie_inf_overrides <- modifyList(base_susie_args, list(unmappable_effects = "inf", refine = FALSE, model_init = NULL))
-  susie_inf_args <- modifyList(
-    finemapping_extra_opts,
-    susie_inf_overrides
-  )
-  res$susie_inf_fitted <- .set_finemapping_fit_class(do.call(susie, susie_inf_args), "susie_inf")
-
-  # SuSiE analysis
   message("Fitting SuSiE model initialized by SuSiE-inf ...")
-  susie_overrides <- modifyList(
-    base_susie_args,
-    list(
-      unmappable_effects = "none",
-      model_init = res$susie_inf_fitted,
-      L_greedy = .model_init_l_greedy(res$susie_inf_fitted, L, L_greedy)
+  res$fitted_models <- fit_susie_inf_then_susie(
+    X,
+    Y,
+    args = modifyList(
+      finemapping_extra_opts,
+      list(L = L, L_greedy = L_greedy, coverage = coverage[1])
     )
   )
-  susie_args <- modifyList(
-    finemapping_extra_opts,
-    susie_overrides
-  )
-  res$susie_fitted <- .set_finemapping_fit_class(do.call(susie, susie_args), "susie")
-  res$fitted_models <- list(susie = res$susie_fitted, susie_inf = res$susie_inf_fitted)
+  res$susie_inf_fitted <- res$fitted_models[["susie_inf"]]
+  res$susie_fitted <- res$fitted_models[["susie"]]
 
   # Process SuSiE results
   susie_post <- postprocess_finemapping_fits(
