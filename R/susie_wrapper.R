@@ -163,9 +163,8 @@ susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
 #' @param L Initial number of causal configurations.
 #' @param max_L Maximum number of causal configurations.
 #' @param l_step Step size for increasing L when the limit is reached.
-#' @param R_finite Controls variance inflation to account for estimating
-#'   the R matrix from a finite reference panel. NULL (default): no
-#'   variance inflation. Passed directly to susie_rss.
+#' @param R_finite Controls variance inflation to account for finite reference LD.
+#'   Passed to \code{susieR::susie_rss()}.
 #' @param ... Extra parameters passed to susie_rss (e.g., var_y, coverage).
 #' @return SuSiE RSS fit object after dynamic L adjustment
 #' @importFrom susieR susie_rss
@@ -455,17 +454,14 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
       res$susie_result_trimmed$mu2 <- susie_output$mu2[eff_idx, , drop = FALSE]
     }
     if (mode == "mvsusie") {
-      res$susie_result_trimmed$coef <- mvsusieR::coef.mvsusie(susie_output)
+      res$susie_result_trimmed$mu <- susie_output$mu[eff_idx, , , drop = FALSE]
+      res$susie_result_trimmed$mu2_diag <- susie_output$mu2_diag[eff_idx, , , drop = FALSE]
+      res$susie_result_trimmed$X_column_scale_factors <- susie_output$X_column_scale_factors
+      res$susie_result_trimmed$coef <- mvsusieR::coef.mvsusie(susie_output)[-1, , drop = FALSE]
       res$susie_result_trimmed$clfsr <- susie_output$conditional_lfsr[eff_idx, , , drop = FALSE]
-      # b1_rescaled (per-effect posterior mean on the original X scale, L x J x R or L x J)
-      # is not stored: it is trivially derivable from alpha, mu, and X_column_scale_factors.
-      # To reconstruct from a fit `s`:
-      #   csd <- s$X_column_scale_factors
-      #   if (length(dim(s$mu)) == 3) {
-      #     b1_rescaled <- sweep(sweep(s$mu, c(1,2), s$alpha, "*"), 2, csd, "/")
-      #   } else {
-      #     b1_rescaled <- sweep(s$alpha * s$mu, 2, csd, "/")
-      #   }
+      # other lfsr can be computed:
+      # se_lfsr <- mvsusie_single_effect_lfsr(clfsr, alpha)
+      # lfsr <- mvsusie_get_lfsr(clfsr, alpha)
     }
     class(res$susie_result_trimmed) <- "susie"
   }

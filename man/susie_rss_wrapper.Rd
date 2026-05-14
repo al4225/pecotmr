@@ -33,9 +33,8 @@ When provided, susie_rss uses the low-rank X interface.}
 
 \item{l_step}{Step size for increasing L when the limit is reached.}
 
-\item{R_finite}{Controls variance inflation to account for estimating
-the R matrix from a finite reference panel. NULL (default): no
-variance inflation. Passed directly to susie_rss.}
+\item{R_finite}{Controls variance inflation to account for finite reference LD.
+Passed to \code{susieR::susie_rss()}.}
 
 \item{...}{Extra parameters passed to susie_rss (e.g., var_y, coverage).}
 }

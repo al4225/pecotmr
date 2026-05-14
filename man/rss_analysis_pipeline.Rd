@@ -65,9 +65,8 @@ signal_cutoff, min_abs_corr).}
 
 \item{pip_cutoff_to_skip}{PIP threshold for early stopping (default 0, no skip).}
 
-\item{R_finite}{Controls variance inflation to account for estimating
-the R matrix from a finite reference panel. NULL (default): no
-variance inflation. Passed directly to susie_rss.}
+\item{R_finite}{Controls variance inflation to account for finite reference LD.
+Passed to \code{susieR::susie_rss()}.}
 
 \item{keep_indel}{Whether to keep indel variants (default TRUE).}
 
