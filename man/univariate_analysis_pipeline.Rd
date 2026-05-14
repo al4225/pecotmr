@@ -67,6 +67,10 @@ univariate_analysis_pipeline(
 \item{min_abs_corr}{Minimum absolute correlation for credible set purity filtering. Default is 0.8,
 which is stricter than the susieR default of 0.5.}
 
+\item{finemapping_extra_opts}{Additional options passed to \code{susieR::susie()}.
+SuSiE-inf is always fitted with \code{refine = FALSE}; the ordinary SuSiE
+fit keeps these options and is initialized with \code{model_init}.}
+
 \item{twas_weights}{Whether to compute TWAS weights. Default is TRUE.}
 
 \item{sample_partition}{Optional data frame with Sample and Fold columns for cross-validation. Default is NULL.}
@@ -84,5 +88,6 @@ A list containing the univariate analysis results.
 }
 \description{
 This function performs univariate analysis for fine-mapping and Transcriptome-Wide Association Study (TWAS)
-with optional cross-validation.
+with optional cross-validation. Fine-mapping fits SuSiE-inf first and then
+fits SuSiE initialized from the SuSiE-inf result.
 }

@@ -1,7 +1,8 @@
 #' Univariate Analysis Pipeline
 #'
 #' This function performs univariate analysis for fine-mapping and Transcriptome-Wide Association Study (TWAS)
-#' with optional cross-validation.
+#' with optional cross-validation. Fine-mapping fits SuSiE-inf first and then
+#' fits SuSiE initialized from the SuSiE-inf result.
 #'
 #' @param X A matrix of genotype data where rows represent samples and columns represent genetic variants.
 #' @param Y A vector of phenotype measurements.
@@ -21,6 +22,9 @@
 #' @param coverage A vector of coverage probabilities for credible sets. Default is c(0.95, 0.7, 0.5).
 #' @param min_abs_corr Minimum absolute correlation for credible set purity filtering. Default is 0.8,
 #'   which is stricter than the susieR default of 0.5.
+#' @param finemapping_extra_opts Additional options passed to \code{susieR::susie()}.
+#'   SuSiE-inf is always fitted with \code{refine = FALSE}; the ordinary SuSiE
+#'   fit keeps these options and is initialized with \code{model_init}.
 #' @param twas_weights Whether to compute TWAS weights. Default is TRUE.
 #' @param sample_partition Optional data frame with Sample and Fold columns for cross-validation. Default is NULL.
 #' @param max_cv_variants The maximum number of variants to be included in cross-validation. Default is -1 (no limit).
@@ -108,15 +112,38 @@ univariate_analysis_pipeline <- function(
   st <- proc.time()
   res <- list()
 
-  # SuSiE analysis
-  message("Fitting SuSiE model on input data ...")
+  # SuSiE-inf analysis
+  message("Fitting SuSiE-inf model on input data ...")
   base_susie_args <- list(X = X, y = Y, L = L, L_greedy = L_greedy, coverage = coverage[1])
-  susie_args <- modifyList(finemapping_extra_opts, base_susie_args) # modifyList(A, B): B overrides A
-  res$susie_fitted <- do.call(susie, susie_args)
+  susie_inf_overrides <- modifyList(base_susie_args, list(unmappable_effects = "inf", refine = FALSE))
+  susie_inf_args <- modifyList(
+    finemapping_extra_opts,
+    susie_inf_overrides
+  ) # modifyList(A, B): B overrides A
+  susie_inf_args$model_init <- NULL
+  susie_inf_args$s_init <- NULL
+  res$susie_inf_fitted <- tag_finemapping_fit(do.call(susie, susie_inf_args), "susie_inf")
+
+  # SuSiE analysis
+  message("Fitting SuSiE model initialized by SuSiE-inf ...")
+  susie_overrides <- modifyList(
+    base_susie_args,
+    list(
+      unmappable_effects = "none",
+      model_init = res$susie_inf_fitted,
+      L_greedy = .model_init_l_greedy(res$susie_inf_fitted, L, L_greedy)
+    )
+  )
+  susie_args <- modifyList(
+    finemapping_extra_opts,
+    susie_overrides
+  )
+  susie_args$s_init <- NULL
+  res$susie_fitted <- tag_finemapping_fit(do.call(susie, susie_args), "susie")
 
   # Process SuSiE results
   susie_post <- postprocess_finemapping_fits(
-    fits = list(susie = res$susie_fitted),
+    fits = list(susie = res$susie_fitted, susie_inf = res$susie_inf_fitted),
     data_x = X,
     data_y = Y,
     X_scalar = X_scalar,
@@ -129,6 +156,7 @@ univariate_analysis_pipeline <- function(
     other_quantities = other_quantities
   )
   res <- c(res, format_finemapping_output(susie_post, primary_method = "susie"))
+  res$susie_inf_result_trimmed <- susie_post$finemapping_results$susie_inf$result_trimmed
   res$total_time_elapsed <- proc.time() - st
 
   # TWAS weights and cross-validation
@@ -144,6 +172,19 @@ univariate_analysis_pipeline <- function(
   }
 
   return(res)
+}
+
+.model_init_l_greedy <- function(model_init, L, L_greedy) {
+  if (is.null(L_greedy)) return(NULL)
+  alpha <- model_init$alpha
+  if (is.null(alpha)) return(L_greedy)
+  init_L <- if (is.list(alpha) && !is.data.frame(alpha)) {
+    nrow(do.call(rbind, alpha))
+  } else {
+    nrow(as.matrix(alpha))
+  }
+  if (is.null(init_L) || is.na(init_L) || init_L < 1) return(L_greedy)
+  min(as.integer(init_L), as.integer(L))
 }
 
 #' Load LD for a study, supporting single or mixture panels.

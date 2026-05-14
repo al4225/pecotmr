@@ -243,6 +243,7 @@ test_that("univariate_analysis_pipeline runs with minimal valid input", {
 
   expect_type(result, "list")
   expect_true("susie_fitted" %in% names(result))
+  expect_true("susie_inf_fitted" %in% names(result))
   expect_true("total_time_elapsed" %in% names(result))
 })
 
@@ -567,18 +568,24 @@ test_that("uap: filter_X with maf_cutoff active properly subsets maf and X_scala
 #  SECTION 4: univariate_analysis_pipeline – main analysis (susie + post)
 # ========================================================================
 
-test_that("uap: susie called with correct args and result stored", {
+test_that("uap: susie-inf initializes susie with matching greedy L", {
   inp <- make_uap_inputs()
+  fake_inf_fit <- make_fake_susie_fit(inp$p)
   fake_fit <- make_fake_susie_fit(inp$p)
   fake_post <- make_fake_post_result(inp$p)
 
-  captured_L <- NULL
-  captured_L_greedy <- NULL
+  captured_calls <- list()
   local_mocked_bindings(
-    susie = function(X, y, L, L_greedy, coverage, ...) {
-      captured_L <<- L
-      captured_L_greedy <<- L_greedy
-      fake_fit
+    susie = function(X, y, L, L_greedy, coverage, unmappable_effects = "none",
+                     model_init = NULL, refine = NULL, ...) {
+      captured_calls[[length(captured_calls) + 1]] <<- list(
+        L = L,
+        L_greedy = L_greedy,
+        unmappable_effects = unmappable_effects,
+        model_init = model_init,
+        refine = refine
+      )
+      if (identical(unmappable_effects, "inf")) fake_inf_fit else fake_fit
     },
     postprocess_finemapping_fits = function(...) fake_post,
     format_finemapping_output = function(post, primary_method) post,
@@ -588,9 +595,20 @@ test_that("uap: susie called with correct args and result stored", {
     X = inp$X, Y = inp$Y, maf = inp$maf,
     twas_weights = FALSE, L = 15, L_greedy = 7
   )
-  expect_equal(captured_L, 15)
-  expect_equal(captured_L_greedy, 7)
-  expect_identical(result$susie_fitted, fake_fit)
+  expect_length(captured_calls, 2)
+  expect_equal(captured_calls[[1]]$L, 15)
+  expect_equal(captured_calls[[1]]$L_greedy, 7)
+  expect_equal(captured_calls[[1]]$unmappable_effects, "inf")
+  expect_false(captured_calls[[1]]$refine)
+  expect_equal(captured_calls[[2]]$L, 15)
+  expect_equal(captured_calls[[2]]$L_greedy, nrow(fake_inf_fit$alpha))
+  expect_equal(captured_calls[[2]]$unmappable_effects, "none")
+  expect_true(captured_calls[[2]]$refine)
+  expect_identical(captured_calls[[2]]$model_init, result$susie_inf_fitted)
+  expect_s3_class(result$susie_fitted, "susie")
+  expect_s3_class(result$susie_inf_fitted, "susie_inf")
+  expect_equal(unclass(result$susie_fitted), fake_fit)
+  expect_equal(unclass(result$susie_inf_fitted), fake_inf_fit)
 })
 
 test_that("uap: post-processing output is merged into result", {
@@ -604,7 +622,10 @@ test_that("uap: post-processing output is merged into result", {
 
   local_mocked_bindings(
     susie = function(...) fake_fit,
-    postprocess_finemapping_fits = function(...) fake_post,
+    postprocess_finemapping_fits = function(fits, ...) {
+      expect_named(fits, c("susie", "susie_inf"))
+      fake_post
+    },
     format_finemapping_output = function(post, primary_method) post,
   )
 

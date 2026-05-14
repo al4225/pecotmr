@@ -2,7 +2,7 @@
 % Please edit documentation in R/regularized_regression.R
 \name{susie_inf_weights}
 \alias{susie_inf_weights}
-\title{Compute SuSiE-INF TWAS weights}
+\title{Compute SuSiE-inf TWAS weights}
 \usage{
 susie_inf_weights(
   X = NULL,
@@ -17,7 +17,7 @@ susie_inf_weights(
 
 \item{y}{Phenotype vector. Required when `susie_inf_fit` is NULL.}
 
-\item{susie_inf_fit}{Optional fitted SuSiE-INF object.}
+\item{susie_inf_fit}{Optional fitted SuSiE-inf object.}
 
 \item{retain_fit}{If TRUE, stores the fitted object as an attribute on the returned weights.}
 
@@ -27,6 +27,6 @@ susie_inf_weights(
 Numeric vector of variant weights.
 }
 \description{
-Extracts coefficients from an existing SuSiE-INF fit or fits `susieR::susie()`
+Extracts coefficients from an existing SuSiE-inf fit or fits `susieR::susie()`
 with `unmappable_effects = "inf"`.
 }

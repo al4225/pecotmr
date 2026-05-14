@@ -317,14 +317,14 @@ susie_ash_weights <- function(X = NULL, y = NULL, susie_ash_fit = NULL, retain_f
     retain_fit = retain_fit, ...)
 }
 
-#' Compute SuSiE-INF TWAS weights
+#' Compute SuSiE-inf TWAS weights
 #'
-#' Extracts coefficients from an existing SuSiE-INF fit or fits `susieR::susie()`
+#' Extracts coefficients from an existing SuSiE-inf fit or fits `susieR::susie()`
 #' with `unmappable_effects = "inf"`.
 #'
 #' @param X Genotype matrix. Required when `susie_inf_fit` is NULL.
 #' @param y Phenotype vector. Required when `susie_inf_fit` is NULL.
-#' @param susie_inf_fit Optional fitted SuSiE-INF object.
+#' @param susie_inf_fit Optional fitted SuSiE-inf object.
 #' @param retain_fit If TRUE, stores the fitted object as an attribute on the returned weights.
 #' @param ... Additional arguments passed to `susieR::susie()` when fitting.
 #' @return Numeric vector of variant weights.
