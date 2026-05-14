@@ -29,11 +29,12 @@
   )
 
   # Handle presets
+  fast_default <- c("susie", "susie_inf", "mrash", "enet", "lasso", "mcp", "scad", "l0learn")
   if (length(methods) == 1) {
     if (methods == "fast_default") {
-      methods <- c("susie", "mrash", "enet", "lasso")
+      methods <- fast_default
     } else if (methods == "default") {
-      methods <- c("susie", "mrash", "enet", "lasso", "bayes_r", "dpr_gibbs")
+      methods <- c(fast_default, "bayes_r", "bayes_c")
     }
   }
 
@@ -406,7 +407,7 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
 #' @importFrom furrr future_map furrr_options
 #' @importFrom purrr map exec
 #' @importFrom rlang !!!
-twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
+twas_weights <- function(X, Y, weight_methods, num_threads = 1, retain_fits = FALSE) {
   if (!is.matrix(X) || (!is.matrix(Y) && !is.vector(Y))) {
     stop("X must be a matrix and Y must be a matrix or a vector.")
   }
@@ -432,13 +433,20 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
     multivariate_weight_methods <- c("mrmash_weights", "mvsusie_weights")
     args <- weight_methods[[method_name]]
 
+    # Only pass retain_fit to functions that accept it
+    if (retain_fits && "retain_fit" %in% names(formals(method_name))) {
+      args$retain_fit <- TRUE
+    }
+
     # Remove columns with zero variance
     valid_columns <- .nonzero_var_columns(X)
     X_filtered <- as.matrix(X[, valid_columns, drop = FALSE])
 
+    method_fit <- NULL
     if (method_name %in% multivariate_weight_methods) {
       # Apply multivariate method
       weights_matrix <- do.call(method_name, c(list(X = X_filtered, Y = Y), args))
+      if (retain_fits) method_fit <- attr(weights_matrix, "fit")
       if (nrow(weights_matrix) != length(valid_columns)) weights_matrix <- weights_matrix[names(valid_columns), , drop = FALSE]
     } else {
       # Apply univariate method to each column of Y
@@ -447,12 +455,17 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
 
       for (k in 1:ncol(Y)) {
         weights_vector <- do.call(method_name, c(list(X = X_filtered, y = Y[, k]), args))
+        if (retain_fits && is.null(method_fit)) {
+          method_fit <- attr(weights_vector, "fit")
+        }
         if (is.matrix(weights_vector)) weights_vector <- weights_vector[, k]
         weights_matrix[, k] <- weights_vector
       }
     }
 
-    return(.embed_weights(weights_matrix, valid_columns, ncol(X), ncol(Y), colnames(X), colnames(Y)))
+    result <- .embed_weights(weights_matrix, valid_columns, ncol(X), ncol(Y), colnames(X), colnames(Y))
+    if (!is.null(method_fit)) attr(result, "fit") <- method_fit
+    return(result)
   }
 
   if (num_cores >= 2) {
@@ -466,7 +479,9 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
 
   if (!is.null(colnames(X))) {
     weights_list <- lapply(weights_list, function(x) {
+      fit <- attr(x, "fit")
       rownames(x) <- colnames(X)
+      if (!is.null(fit)) attr(x, "fit") <- fit
       return(x)
     })
   }
@@ -498,6 +513,40 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1) {
 #' print(predicted_outcomes)
 twas_predict <- function(X, weights_list) {
   setNames(lapply(weights_list, function(w) X %*% w), gsub("_weights", "_predicted", names(weights_list)))
+}
+
+#' Estimate Sparsity from mr.ash Mixture Proportions
+#'
+#' Computes an empirical estimate of the proportion of non-zero effects
+#' (sparsity) from the mr.ash fit. mr.ash fits a mixture model with a
+#' point mass at zero (spike) plus continuous components (slab), and
+#' learns the mixture proportions via variational EM. The sparsity
+#' estimate \code{1 - pi[1]} is the empirical Bayes estimate of the
+#' non-null proportion, which can be used as a data-driven prior for
+#' the inclusion probability parameters (\code{pi} for bayesC,
+#' \code{probIn} for BayesB) of spike-and-slab Bayesian methods.
+#'
+#' @param weight_results Named list of weight vectors or matrices as
+#'   returned by \code{\link{twas_weights}}. The mr.ash element should
+#'   have a \code{"fit"} attribute containing the model fit object
+#'   (set \code{retain_fits = TRUE} in \code{twas_weights} to obtain this).
+#'
+#' @return A scalar sparsity estimate (proportion of non-zero effects).
+#' @export
+estimate_sparsity <- function(weight_results) {
+  w <- weight_results[["mrash_weights"]]
+  if (is.null(w)) {
+    stop("mr.ash weights ('mrash_weights') not found in weight_results.")
+  }
+
+  fit <- attr(w, "fit")
+  if (is.null(fit) || is.null(fit$pi)) {
+    stop("mr.ash fit object not found. Run twas_weights() with retain_fits = TRUE ",
+         "and ensure mrash_weights is included.")
+  }
+
+  # fit$pi[1] is the weight on the spike (sa2[1] = 0); 1 - pi[1] = non-null proportion
+  return(1 - fit$pi[1])
 }
 
 #' TWAS Weights Pipeline
@@ -546,7 +595,8 @@ twas_weights_pipeline <- function(X,
                                   ensemble = FALSE,
                                   ensemble_r2_threshold = 0.01,
                                   ensemble_solver = "quadprog",
-                                  ensemble_alpha = 1) {
+                                  ensemble_alpha = 1,
+                                  estimate_pi = TRUE) {
   if (is.character(weight_methods)) {
     weight_methods <- .twas_method_lookup(weight_methods)
   }
@@ -555,16 +605,67 @@ twas_weights_pipeline <- function(X,
   st <- proc.time()
   message("Performing TWAS weights computation for univariate analysis methods ...")
 
-  # TWAS weights and predictions
+  # Store susie intermediate info if susie_fit is provided
   if (!is.null(susie_fit) && !is.null(weight_methods$susie_weights)) {
-    weight_methods$susie_weights <- list(susie_fit = susie_fit)
     res$susie_weights_intermediate <- susie_fit[c("mu", "lbf_variable", "X_column_scale_factors", "pip")]
     if (!is.null(susie_fit$sets$cs)) {
       res$susie_weights_intermediate$cs_variants <- setNames(lapply(susie_fit$sets$cs, function(L) colnames(X)[L]), names(susie_fit$sets$cs))
       res$susie_weights_intermediate$cs_purity <- susie_fit$sets$purity
     }
   }
-  res$twas_weights <- twas_weights(X, y, weight_methods = weight_methods)
+
+  # Check if empirical pi estimation is needed for spike-and-slab methods
+  bayes_c_needs_pi <- "bayes_c_weights" %in% names(weight_methods) &&
+    !"pi" %in% names(weight_methods$bayes_c_weights)
+  bayes_b_needs_pi <- "bayes_b_weights" %in% names(weight_methods) &&
+    !"probIn" %in% names(weight_methods$bayes_b_weights)
+  needs_pi_estimation <- (bayes_c_needs_pi || bayes_b_needs_pi) && estimate_pi
+
+  if (needs_pi_estimation) {
+    # Run mr.ash first to estimate sparsity
+    mrash_methods <- list(mrash_weights = weight_methods[["mrash_weights"]] %||% list())
+
+    message("  Estimating sparsity from mr.ash ...")
+    mrash_weights <- twas_weights(X, y, weight_methods = mrash_methods, retain_fits = TRUE)
+
+    empirical_pi <- estimate_sparsity(mrash_weights)
+    message(sprintf("  Empirical sparsity estimate: %.4f", empirical_pi))
+    res$empirical_pi <- empirical_pi
+
+    # Inject into spike-and-slab methods that need it
+    if (bayes_c_needs_pi) weight_methods$bayes_c_weights$pi <- as.numeric(empirical_pi)
+    if (bayes_b_needs_pi) weight_methods$bayes_b_weights$probIn <- as.numeric(empirical_pi)
+
+    # Run remaining methods (those not already computed)
+    remaining_fn_names <- setdiff(names(weight_methods), "mrash_weights")
+
+    if (!is.null(susie_fit) && "susie_weights" %in% remaining_fn_names) {
+      weight_methods$susie_weights <- list(susie_fit = susie_fit)
+    }
+
+    if (length(remaining_fn_names) > 0) {
+      remaining_methods <- weight_methods[remaining_fn_names]
+      remaining_weights <- twas_weights(X, y, weight_methods = remaining_methods)
+      res$twas_weights <- c(mrash_weights, remaining_weights)
+    } else {
+      res$twas_weights <- mrash_weights
+    }
+
+    # Clean up fit attributes from final weight results
+    res$twas_weights <- lapply(res$twas_weights, function(w) { attr(w, "fit") <- NULL; w })
+
+    # Remove mr.ash if it was not in the original weight_methods
+    if (!"mrash_weights" %in% names(weight_methods)) {
+      res$twas_weights[["mrash_weights"]] <- NULL
+    }
+  } else {
+    # Run all methods at once
+    if (!is.null(susie_fit) && !is.null(weight_methods$susie_weights)) {
+      weight_methods$susie_weights <- list(susie_fit = susie_fit)
+    }
+    res$twas_weights <- twas_weights(X, y, weight_methods = weight_methods)
+  }
+
   res$twas_predictions <- twas_predict(X, res$twas_weights)
 
   if (cv_folds > 1) {

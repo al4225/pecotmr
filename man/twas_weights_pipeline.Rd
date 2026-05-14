@@ -17,7 +17,8 @@ twas_weights_pipeline(
   ensemble = FALSE,
   ensemble_r2_threshold = 0.01,
   ensemble_solver = "quadprog",
-  ensemble_alpha = 1
+  ensemble_alpha = 1,
+  estimate_pi = TRUE
 )
 }
 \arguments{
