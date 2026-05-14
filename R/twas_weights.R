@@ -102,6 +102,47 @@
   weight_methods[!is_all_zero]
 }
 
+.susie_weight_intermediate <- function(fit, X) {
+  keep <- intersect(c("mu", "lbf_variable", "X_column_scale_factors", "pip", "theta"), names(fit))
+  intermediate <- fit[keep]
+  if (!is.null(fit$sets$cs)) {
+    intermediate$cs_variants <- setNames(lapply(fit$sets$cs, function(L) colnames(X)[L]), names(fit$sets$cs))
+    intermediate$cs_purity <- fit$sets$purity
+  }
+  intermediate
+}
+
+.inject_susie_family_fits <- function(weight_methods, fitted_models = NULL) {
+  if (is.null(fitted_models)) return(weight_methods)
+  susie_fit <- fitted_models[["susie"]]
+  susie_inf_fit <- fitted_models[["susie_inf"]]
+
+  if (!is.null(susie_fit)) {
+    susie_fit <- .set_finemapping_fit_class(susie_fit, "susie")
+  }
+  if (!is.null(susie_inf_fit)) {
+    susie_inf_fit <- .set_finemapping_fit_class(susie_inf_fit, "susie_inf")
+  }
+
+  if (!is.null(susie_inf_fit) && !is.null(weight_methods[["susie_inf_weights"]])) {
+    weight_methods[["susie_inf_weights"]][["susie_inf_fit"]] <- susie_inf_fit
+  }
+  if (!is.null(susie_fit) && !is.null(weight_methods[["susie_weights"]])) {
+    weight_methods[["susie_weights"]][["susie_fit"]] <- susie_fit
+  }
+  if (!is.null(weight_methods[["susie_weights"]]) &&
+      is.null(weight_methods[["susie_weights"]][["susie_fit"]]) &&
+      !is.null(susie_inf_fit)) {
+    weight_methods[["susie_weights"]][["model_init"]] <- susie_inf_fit
+    L <- weight_methods[["susie_weights"]][["L"]]
+    if (is.null(L)) L <- length(susie_inf_fit$V)
+    weight_methods[["susie_weights"]][["L_greedy"]] <- .model_init_l_greedy(
+      susie_inf_fit, L, weight_methods[["susie_weights"]][["L_greedy"]]
+    )
+  }
+  weight_methods
+}
+
 #' Cross-Validation for weights selection in Transcriptome-Wide Association Studies (TWAS)
 #'
 #' Performs cross-validation for TWAS, supporting both univariate and multivariate methods.
@@ -559,6 +600,8 @@ estimate_sparsity <- function(weight_results) {
 #' @param X A matrix of genotype data where rows represent samples and columns represent genetic variants.
 #' @param y A vector of phenotype measurements for each sample.
 #' @param susie_fit An object returned by the SuSiE function, containing the SuSiE model fit.
+#' @param fitted_models Optional named list of fitted fine-mapping models, such
+#'   as \code{list(susie = susie_fit, susie_inf = susie_inf_fit)}.
 #' @param cv_folds The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Defaults to 5.
 #' @param sample_partition Optional data frame with Sample and Fold columns for cross-validation. If NULL, a random partition is generated.
 #' @param weight_methods List of methods to use to compute weights for TWAS; along with their parameters.
@@ -587,6 +630,7 @@ estimate_sparsity <- function(weight_results) {
 twas_weights_pipeline <- function(X,
                                   y,
                                   susie_fit = NULL,
+                                  fitted_models = NULL,
                                   cv_folds = 5,
                                   sample_partition = NULL,
                                   weight_methods = "default",
@@ -601,18 +645,18 @@ twas_weights_pipeline <- function(X,
   if (is.character(weight_methods)) {
     weight_methods <- .twas_method_lookup(weight_methods)
   }
+  if (is.null(fitted_models)) fitted_models <- list()
+  if (!is.null(susie_fit)) fitted_models[["susie"]] <- susie_fit
 
   res <- list()
   st <- proc.time()
   message("Performing TWAS weights computation for univariate analysis methods ...")
 
-  # Store susie intermediate info if susie_fit is provided
-  if (!is.null(susie_fit) && !is.null(weight_methods$susie_weights)) {
-    res$susie_weights_intermediate <- susie_fit[c("mu", "lbf_variable", "X_column_scale_factors", "pip")]
-    if (!is.null(susie_fit$sets$cs)) {
-      res$susie_weights_intermediate$cs_variants <- setNames(lapply(susie_fit$sets$cs, function(L) colnames(X)[L]), names(susie_fit$sets$cs))
-      res$susie_weights_intermediate$cs_purity <- susie_fit$sets$purity
-    }
+  if (!is.null(fitted_models[["susie"]]) && !is.null(weight_methods$susie_weights)) {
+    res$susie_weights_intermediate <- .susie_weight_intermediate(fitted_models[["susie"]], X)
+  }
+  if (!is.null(fitted_models[["susie_inf"]]) && !is.null(weight_methods$susie_inf_weights)) {
+    res$susie_inf_weights_intermediate <- .susie_weight_intermediate(fitted_models[["susie_inf"]], X)
   }
 
   # Check if empirical pi estimation is needed for spike-and-slab methods
@@ -640,20 +684,18 @@ twas_weights_pipeline <- function(X,
     # Run remaining methods (those not already computed)
     remaining_fn_names <- setdiff(names(weight_methods), "mrash_weights")
 
-    if (!is.null(susie_fit) && "susie_weights" %in% remaining_fn_names) {
-      weight_methods$susie_weights <- list(susie_fit = susie_fit)
-    }
-
     if (length(remaining_fn_names) > 0) {
       remaining_methods <- weight_methods[remaining_fn_names]
-      remaining_weights <- twas_weights(X, y, weight_methods = remaining_methods)
+      remaining_methods <- .inject_susie_family_fits(remaining_methods, fitted_models)
+      remaining_weights <- twas_weights(
+        X,
+        y,
+        weight_methods = remaining_methods
+      )
       res$twas_weights <- c(mrash_weights, remaining_weights)
     } else {
       res$twas_weights <- mrash_weights
     }
-
-    # Clean up fit attributes from final weight results
-    res$twas_weights <- lapply(res$twas_weights, function(w) { attr(w, "fit") <- NULL; w })
 
     # Remove mr.ash if it was not in the original weight_methods
     if (!"mrash_weights" %in% names(weight_methods)) {
@@ -661,11 +703,16 @@ twas_weights_pipeline <- function(X,
     }
   } else {
     # Run all methods at once
-    if (!is.null(susie_fit) && !is.null(weight_methods$susie_weights)) {
-      weight_methods$susie_weights <- list(susie_fit = susie_fit)
-    }
-    res$twas_weights <- twas_weights(X, y, weight_methods = weight_methods)
+    res$twas_weights <- twas_weights(
+      X,
+      y,
+      weight_methods = .inject_susie_family_fits(weight_methods, fitted_models)
+    )
   }
+  res$twas_weights <- lapply(res$twas_weights, function(w) {
+    attr(w, "fit") <- NULL
+    w
+  })
 
   res$twas_predictions <- twas_predict(X, res$twas_weights)
 
@@ -674,12 +721,20 @@ twas_weights_pipeline <- function(X,
     # 1. reset SuSiE to not using refine or adaptive L but to use L from previous analysis
     # 2. at most 100 iterations for mr.ash allowed
     # 3. only use a subset of variants randomly selected to avoid bias
-    if (!is.null(susie_fit) && !is.null(weight_methods$susie_weights)) {
-      L <- length(susie_fit$V)
-      weight_methods$susie_weights <- list(refine = FALSE, L = L, L_greedy = NULL)
+    if (!is.null(fitted_models[["susie_inf"]]) && !is.null(weight_methods$susie_inf_weights)) {
+      weight_methods$susie_inf_weights$L <- length(fitted_models[["susie_inf"]]$V)
+      weight_methods$susie_inf_weights$refine <- FALSE
+    }
+    if (!is.null(weight_methods$susie_weights)) {
+      susie_cv_fit <- fitted_models[["susie"]]
+      if (is.null(susie_cv_fit)) susie_cv_fit <- fitted_models[["susie_inf"]]
+      if (!is.null(susie_cv_fit)) {
+        weight_methods$susie_weights$L <- length(susie_cv_fit$V)
+        weight_methods$susie_weights$refine <- FALSE
+      }
     }
     if (is.null(cv_weight_methods)) {
-      cv_weight_methods <- names(.filter_zero_weight_methods(weight_methods, res$twas_weights))
+      cv_weight_methods <- .filter_zero_weight_methods(weight_methods, res$twas_weights)
     }
 
     variants_for_cv <- c()

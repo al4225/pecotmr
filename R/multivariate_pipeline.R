@@ -294,7 +294,7 @@ multivariate_analysis_pipeline <- function(
   # Process mvSuSiE results
   sec_coverage <- if (length(coverage) > 1) coverage[-1] else NULL
   mvsusie_post <- postprocess_finemapping_fits(
-    fits = list(mvsusie = tag_finemapping_fit(res$mvsusie_fitted, "mvsusie")),
+    fits = list(mvsusie = .set_finemapping_fit_class(res$mvsusie_fitted, "mvsusie")),
     data_x = X,
     data_y = NULL,
     X_scalar = 1,

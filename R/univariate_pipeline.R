@@ -115,14 +115,12 @@ univariate_analysis_pipeline <- function(
   # SuSiE-inf analysis
   message("Fitting SuSiE-inf model on input data ...")
   base_susie_args <- list(X = X, y = Y, L = L, L_greedy = L_greedy, coverage = coverage[1])
-  susie_inf_overrides <- modifyList(base_susie_args, list(unmappable_effects = "inf", refine = FALSE))
+  susie_inf_overrides <- modifyList(base_susie_args, list(unmappable_effects = "inf", refine = FALSE, model_init = NULL))
   susie_inf_args <- modifyList(
     finemapping_extra_opts,
     susie_inf_overrides
-  ) # modifyList(A, B): B overrides A
-  susie_inf_args$model_init <- NULL
-  susie_inf_args$s_init <- NULL
-  res$susie_inf_fitted <- tag_finemapping_fit(do.call(susie, susie_inf_args), "susie_inf")
+  )
+  res$susie_inf_fitted <- .set_finemapping_fit_class(do.call(susie, susie_inf_args), "susie_inf")
 
   # SuSiE analysis
   message("Fitting SuSiE model initialized by SuSiE-inf ...")
@@ -138,12 +136,12 @@ univariate_analysis_pipeline <- function(
     finemapping_extra_opts,
     susie_overrides
   )
-  susie_args$s_init <- NULL
-  res$susie_fitted <- tag_finemapping_fit(do.call(susie, susie_args), "susie")
+  res$susie_fitted <- .set_finemapping_fit_class(do.call(susie, susie_args), "susie")
+  res$fitted_models <- list(susie = res$susie_fitted, susie_inf = res$susie_inf_fitted)
 
   # Process SuSiE results
   susie_post <- postprocess_finemapping_fits(
-    fits = list(susie = res$susie_fitted, susie_inf = res$susie_inf_fitted),
+    fits = res$fitted_models,
     data_x = X,
     data_y = Y,
     X_scalar = X_scalar,
@@ -162,29 +160,18 @@ univariate_analysis_pipeline <- function(
   # TWAS weights and cross-validation
   if (twas_weights) {
     res$twas_weights_result <- twas_weights_pipeline(
-      X, Y, res$susie_fitted,
+      X, Y, fitted_models = res$fitted_models,
       cv_folds = cv_folds,
       max_cv_variants = max_cv_variants,
       cv_threads = cv_threads,
       sample_partition = sample_partition
     )
-    if ("top_loci" %in% names(res)) res$twas_weights_result$susie_weights_intermediate$top_loci <- res$top_loci
+    if ("top_loci" %in% names(res) && !is.null(res$twas_weights_result$susie_weights_intermediate)) {
+      res$twas_weights_result$susie_weights_intermediate$top_loci <- res$top_loci
+    }
   }
 
   return(res)
-}
-
-.model_init_l_greedy <- function(model_init, L, L_greedy) {
-  if (is.null(L_greedy)) return(NULL)
-  alpha <- model_init$alpha
-  if (is.null(alpha)) return(L_greedy)
-  init_L <- if (is.list(alpha) && !is.data.frame(alpha)) {
-    nrow(do.call(rbind, alpha))
-  } else {
-    nrow(as.matrix(alpha))
-  }
-  if (is.null(init_L) || is.na(init_L) || init_L < 1) return(L_greedy)
-  min(as.integer(init_L), as.integer(L))
 }
 
 #' Load LD for a study, supporting single or mixture panels.

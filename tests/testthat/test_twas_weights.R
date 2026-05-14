@@ -26,6 +26,20 @@ make_data <- function(n = 50, p = 10, seed = 42, add_zero_var_col = FALSE) {
   list(X = X, Y = Y, beta = beta)
 }
 
+make_fake_susie_fit <- function(p = 10, L = 3, inf = FALSE) {
+  fit <- list(
+    alpha = matrix(1 / p, nrow = L, ncol = p),
+    mu = matrix(0, nrow = L, ncol = p),
+    lbf_variable = matrix(0, nrow = L, ncol = p),
+    X_column_scale_factors = rep(1, p),
+    pip = rep(0.1, p),
+    V = rep(0.5, L),
+    sets = list(cs = NULL, purity = NULL)
+  )
+  if (inf) fit$theta <- rep(0, p)
+  fit
+}
+
 # ===========================================================================
 #
 #  .twas_method_lookup
@@ -908,19 +922,12 @@ test_that("twas_weights_pipeline: accepts custom short-name vector", {
   expect_equal(sort(names(result$twas_weights)), sort(c("lasso_weights", "enet_weights")))
 })
 
-test_that("twas_weights_pipeline: with susie_fit stores intermediate results", {
+test_that("twas_weights_pipeline: with fitted_models stores SuSiE intermediates", {
   d <- make_data(n = 50, p = 10)
   y_vec <- as.numeric(d$Y)
 
-  # Build a minimal fake susie_fit object
-  fake_susie <- list(
-    mu = matrix(0, nrow = 5, ncol = 10),
-    lbf_variable = matrix(0, nrow = 5, ncol = 10),
-    X_column_scale_factors = rep(1, 10),
-    pip = rep(0.1, 10),
-    V = rep(0.5, 5),
-    sets = list(cs = NULL, purity = NULL)
-  )
+  fake_susie <- make_fake_susie_fit(p = 10, L = 5)
+  fake_susie_inf <- make_fake_susie_fit(p = 10, L = 5, inf = TRUE)
 
   local_mocked_bindings(
     enet_weights  = function(X, y, ...) rep(0, ncol(X)),
@@ -935,30 +942,28 @@ test_that("twas_weights_pipeline: with susie_fit stores intermediate results", {
     susie_inf_weights = function(X, y, ...) rep(0, ncol(X))
   )
 
-  result <- twas_weights_pipeline(d$X, y_vec, susie_fit = fake_susie, cv_folds = 0,
-                                  estimate_pi = FALSE)
+  result <- twas_weights_pipeline(
+    d$X, y_vec,
+    fitted_models = list(susie = fake_susie, susie_inf = fake_susie_inf),
+    cv_folds = 0,
+    estimate_pi = FALSE
+  )
 
   expect_true("susie_weights_intermediate" %in% names(result))
+  expect_true("susie_inf_weights_intermediate" %in% names(result))
   expect_true("mu" %in% names(result$susie_weights_intermediate))
-  expect_true("pip" %in% names(result$susie_weights_intermediate))
-  expect_true("lbf_variable" %in% names(result$susie_weights_intermediate))
-  expect_true("X_column_scale_factors" %in% names(result$susie_weights_intermediate))
+  expect_true("theta" %in% names(result$susie_inf_weights_intermediate))
 })
 
-test_that("twas_weights_pipeline: with susie_fit, susie_weights gets susie_fit argument", {
+test_that("twas_weights_pipeline: fitted_models are injected into SuSiE-family weights", {
   d <- make_data(n = 50, p = 10)
   y_vec <- as.numeric(d$Y)
 
-  fake_susie <- list(
-    mu = matrix(0, nrow = 5, ncol = 10),
-    lbf_variable = matrix(0, nrow = 5, ncol = 10),
-    X_column_scale_factors = rep(1, 10),
-    pip = rep(0.1, 10),
-    V = rep(0.5, 5),
-    sets = list(cs = NULL, purity = NULL)
-  )
+  fake_susie <- make_fake_susie_fit(p = 10, L = 5)
+  fake_susie_inf <- make_fake_susie_fit(p = 10, L = 5, inf = TRUE)
 
   susie_received_fit <- FALSE
+  susie_inf_received_fit <- FALSE
   local_mocked_bindings(
     enet_weights  = function(X, y, ...) rep(0, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0, ncol(X)),
@@ -968,20 +973,64 @@ test_that("twas_weights_pipeline: with susie_fit, susie_weights gets susie_fit a
     mcp_weights   = function(X, y, ...) rep(0, ncol(X)),
     scad_weights  = function(X, y, ...) rep(0, ncol(X)),
     l0learn_weights = function(X, y, ...) rep(0, ncol(X)),
-    susie_inf_weights = function(X, y, ...) rep(0, ncol(X)),
+    susie_inf_weights = function(X, y, ...) {
+      args <- list(...)
+      if (!is.null(args$susie_inf_fit) && "susie_inf" %in% class(args$susie_inf_fit)) {
+        susie_inf_received_fit <<- TRUE
+      }
+      rep(0, ncol(X))
+    },
     susie_weights = function(X, y, ...) {
       args <- list(...)
-      # The pipeline should pass susie_fit as an argument
-      if ("susie_fit" %in% names(args)) {
+      if (!is.null(args$susie_fit) && "susie" %in% class(args$susie_fit)) {
         susie_received_fit <<- TRUE
       }
       rep(0, ncol(X))
     }
   )
 
-  result <- twas_weights_pipeline(d$X, y_vec, susie_fit = fake_susie, cv_folds = 0,
-                                  estimate_pi = FALSE)
+  result <- twas_weights_pipeline(
+    d$X, y_vec,
+    fitted_models = list(susie = fake_susie, susie_inf = fake_susie_inf),
+    cv_folds = 0,
+    estimate_pi = FALSE
+  )
   expect_true(susie_received_fit)
+  expect_true(susie_inf_received_fit)
+})
+
+test_that("twas_weights_pipeline: SuSiE-inf fit initializes ordinary SuSiE when ordinary fit is absent", {
+  d <- make_data(n = 50, p = 10)
+  y_vec <- as.numeric(d$Y)
+  fake_susie_inf <- make_fake_susie_fit(p = 10, L = 7, inf = TRUE)
+  captured_model_init <- NULL
+  captured_L_greedy <- NULL
+
+  local_mocked_bindings(
+    susie_inf_weights = function(X, y, ...) rep(0, ncol(X)),
+    susie_weights = function(X, y, ...) {
+      args <- list(...)
+      captured_model_init <<- args$model_init
+      captured_L_greedy <<- args$L_greedy
+      rep(0, ncol(X))
+    }
+  )
+
+  result <- twas_weights_pipeline(
+    d$X,
+    y_vec,
+    weight_methods = list(
+      susie_weights = list(L = 20, L_greedy = 3),
+      susie_inf_weights = list()
+    ),
+    fitted_models = list(susie_inf = fake_susie_inf),
+    cv_folds = 0,
+    estimate_pi = FALSE
+  )
+
+  expect_equal(names(result$twas_weights), c("susie_weights", "susie_inf_weights"))
+  expect_true("susie_inf" %in% class(captured_model_init))
+  expect_equal(captured_L_greedy, 7)
 })
 
 test_that("twas_weights_pipeline: weight dimensions match input", {

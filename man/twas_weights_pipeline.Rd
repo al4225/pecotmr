@@ -8,6 +8,7 @@ twas_weights_pipeline(
   X,
   y,
   susie_fit = NULL,
+  fitted_models = NULL,
   cv_folds = 5,
   sample_partition = NULL,
   weight_methods = "default",
@@ -27,6 +28,9 @@ twas_weights_pipeline(
 \item{y}{A vector of phenotype measurements for each sample.}
 
 \item{susie_fit}{An object returned by the SuSiE function, containing the SuSiE model fit.}
+
+\item{fitted_models}{Optional named list of fitted fine-mapping models, such
+as \code{list(susie = susie_fit, susie_inf = susie_inf_fit)}.}
 
 \item{cv_folds}{The number of folds to use for cross-validation. Set to 0 to skip cross-validation. Defaults to 5.}
 

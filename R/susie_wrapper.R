@@ -92,7 +92,7 @@ format_cs_column <- function(coverage, method) {
   top_loci
 }
 
-tag_finemapping_fit <- function(fit, method) {
+.set_finemapping_fit_class <- function(fit, method) {
   if (is.null(fit)) return(NULL)
   method_class <- switch(method,
     susie = "susie",
@@ -106,6 +106,11 @@ tag_finemapping_fit <- function(fit, method) {
   )
   if (!is.null(method_class)) class(fit) <- unique(c(method_class, class(fit)))
   fit
+}
+
+.model_init_l_greedy <- function(model_init, L, L_greedy) {
+  if (is.null(L_greedy)) return(NULL)
+  min(length(model_init$V), L)
 }
 
 #' Post-process Fine-mapping Fits
@@ -149,7 +154,7 @@ postprocess_finemapping_fits <- function(fits, data_x, data_y = NULL,
   }
 
   posts <- lapply(names(fits), function(method) {
-    fit <- tag_finemapping_fit(fits[[method]], method)
+    fit <- .set_finemapping_fit_class(fits[[method]], method)
     postprocess_finemapping_fit(
       fit, method = method, data_x = data_x, data_y = data_y,
       X_scalar = X_scalar, y_scalar = y_scalar, maf = maf,
@@ -656,7 +661,7 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
   }
 
   rss_method <- analysis_method
-  rss_fit <- tag_finemapping_fit(res, rss_method)
+  rss_fit <- .set_finemapping_fit_class(res, rss_method)
   post <- postprocess_finemapping_fits(
     fits = setNames(list(rss_fit), rss_method),
     data_x = data_x,
