@@ -98,7 +98,7 @@ extract_cs_info <- function(con_data, cs_names, top_loci_table) {
     return(result)
   })
   # Combine all tibbles into one data frame
-  final_result <- dplyr::bind_rows(results)
+  final_result <- bind_rows(results)
   return(final_result)
 }
 

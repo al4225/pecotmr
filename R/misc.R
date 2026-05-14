@@ -643,7 +643,7 @@ normalize_variant_id <- function(ids, chr_prefix = TRUE, convention = NULL) {
   }
 }
 
-# Backward-compatible alias used internally -- delegates to parse_variant_id
+# Internal convenience wrapper around parse_variant_id.
 variant_id_to_df <- function(variant_id) {
   parse_variant_id(variant_id)
 }
@@ -1059,4 +1059,3 @@ filter_molecular_events <- function(events, filters, condition = NULL, remove_al
 
   return(filtered_events)
 }
-

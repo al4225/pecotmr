@@ -9,7 +9,7 @@
 #' @param Y_scalar A scalar to rescale Y to its original scale.
 #' @param maf A vector of minor allele frequencies for each variant in X.
 #' @param X_variance Optional variance of X. Default is NULL.
-#' @param other_quantities A list of other quantities to be passed to susie_post_processor. Default is an empty list.
+#' @param other_quantities A list of other quantities to be carried into fine-mapping post-processing. Default is an empty list.
 #' @param imiss_cutoff Individual missingness cutoff. Default is 1.0.
 #' @param maf_cutoff Minor allele frequency cutoff. Default is NULL.
 #' @param xvar_cutoff Variance cutoff for X. Default is 0.05.
@@ -115,14 +115,20 @@ univariate_analysis_pipeline <- function(
   res$susie_fitted <- do.call(susie, susie_args)
 
   # Process SuSiE results
-  susie_result_trimmed <- susie_post_processor(
-    res$susie_fitted, X, Y, X_scalar, Y_scalar, maf,
+  susie_post <- postprocess_finemapping_fits(
+    fits = list(susie = res$susie_fitted),
+    data_x = X,
+    data_y = Y,
+    X_scalar = X_scalar,
+    y_scalar = Y_scalar,
+    maf = maf,
+    coverage = coverage[1],
     secondary_coverage = if (length(coverage) > 1) coverage[-1] else NULL,
     signal_cutoff = signal_cutoff,
     min_abs_corr = min_abs_corr,
     other_quantities = other_quantities
   )
-  res <- c(res, susie_result_trimmed)
+  res <- c(res, format_finemapping_output(susie_post, primary_method = "susie"))
   res$total_time_elapsed <- proc.time() - st
 
   # TWAS weights and cross-validation

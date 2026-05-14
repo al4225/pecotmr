@@ -11,7 +11,7 @@
 #' @param L_greedy Initial greedy number of components in mvSuSiE. Default is 5.
 #' @param ld_reference_meta_file An optional path to a file containing linkage disequilibrium reference data. If provided, variants in X are filtered based on this reference.
 #' @param pip_cutoff_to_skip Cutoff value for skipping conditions based on PIP values. Default is 0.
-#' @param signal_cutoff Cutoff value for signal identification in PIP values for susie_post_processor. Default is 0.025.
+#' @param signal_cutoff Cutoff value for signal identification in PIP values. Default is 0.025.
 #' @param coverage A vector of coverage probabilities, with the first element being the primary coverage and the rest being secondary coverage probabilities for credible set refinement. Defaults to c(0.95, 0.7, 0.5).
 #' @param min_abs_corr Minimum absolute correlation for credible set purity filtering. Default is 0.8,
 #'   which is stricter than the susieR default of 0.5.
@@ -293,12 +293,20 @@ multivariate_analysis_pipeline <- function(
 
   # Process mvSuSiE results
   sec_coverage <- if (length(coverage) > 1) coverage[-1] else NULL
-  mvsusie_result_trimmed <- susie_post_processor(
-    res$mvsusie_fitted, X, NULL, 1, 1,
-    maf = maf, secondary_coverage = sec_coverage, signal_cutoff = signal_cutoff,
-    min_abs_corr = min_abs_corr, mode = "mvsusie", other_quantities = other_quantities
+  mvsusie_post <- postprocess_finemapping_fits(
+    fits = list(mvsusie = tag_finemapping_fit(res$mvsusie_fitted, "mvsusie")),
+    data_x = X,
+    data_y = NULL,
+    X_scalar = 1,
+    y_scalar = 1,
+    maf = maf,
+    coverage = coverage[1],
+    secondary_coverage = sec_coverage,
+    signal_cutoff = signal_cutoff,
+    min_abs_corr = min_abs_corr,
+    other_quantities = other_quantities
   )
-  res <- c(res, mvsusie_result_trimmed)
+  res <- c(res, format_finemapping_output(mvsusie_post, primary_method = "mvsusie"))
   res$total_time_elapsed <- proc.time() - st
 
   # Run TWAS weights and optionally CV

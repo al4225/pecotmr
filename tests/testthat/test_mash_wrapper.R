@@ -12,14 +12,14 @@ test_that("merge_susie_cs merges credible sets correctly", {
         top_loci = data.frame(
           variant_id = c("variant1", "variant2"),
           pip = c(0.8, 0.6),
-          cs_coverage_0.95 = c(1, 1)
+          CS_95_susie = c(1, 1)
         )
       ),
       condition_2 = list(
         top_loci = data.frame(
           variant_id = c("variant3", "variant4"),
           pip = c(0.9, 0.7),
-          cs_coverage_0.95 = c(1, 2)
+          CS_95_susie = c(1, 2)
         )
       )
     )
@@ -42,14 +42,14 @@ test_that("merge_susie_cs merges credible sets correctly", {
         top_loci = data.frame(
           variant_id = c("variant1", "variant2"),
           pip = c(0.8, 0.6),
-          cs_coverage_0.95 = c(1, 1)
+          CS_95_susie = c(1, 1)
         )
       ),
       condition_2 = list(
         top_loci = data.frame(
           variant_id = c("variant2", "variant3"),
           pip = c(0.7, 0.9),
-          cs_coverage_0.95 = c(2, 2)
+          CS_95_susie = c(2, 2)
         )
       )
     )
@@ -78,45 +78,21 @@ test_that("merge_susie_cs merges credible sets correctly", {
 
   expect_equal(merge_susie_cs(susie_fit_3), expected_output_3)
 
-  # Test case 4: Complementary parameter set to TRUE
-  susie_fit_4 <- list(
-    list(
-      condition_1 = list(
-        top_loci = data.frame(
-          variant_id = c("variant1", "variant2"),
-          pip = c(0.8, 0.6),
-          cs_coverage_0.95 = c(1, 1)
-        )
-      ),
-      condition_2 = list(
-        top_loci = data.frame(
-          variant_id = c("variant3", "variant4"),
-          pip = c(0.9, 0.7),
-          cs_coverage_0.95 = c(2, 2)
-        )
-      )
-    )
-  )
-
-  expected_output_4 <- NULL
-
-  expect_equal(merge_susie_cs(susie_fit_4, complementary = TRUE), expected_output_4)
-
-  # Test case 5: Different coverage parameter
+  # Test case 4: Different coverage parameter
   susie_fit_5 <- list(
     list(
       condition_1 = list(
         top_loci = data.frame(
           variant_id = c("variant1", "variant2"),
           pip = c(0.8, 0.6),
-          cs_coverage_0.90 = c(1, 1)
+          CS_90_susie = c(1, 1)
         )
       ),
       condition_2 = list(
         top_loci = data.frame(
           variant_id = c("variant3", "variant4"),
           pip = c(0.9, 0.7),
-          cs_coverage_0.90 = c(2, 2)
+          CS_90_susie = c(2, 2)
         )
       )
     )
@@ -130,7 +106,7 @@ test_that("merge_susie_cs merges credible sets correctly", {
     stringsAsFactors = FALSE
   )
 
-  expect_equal(merge_susie_cs(susie_fit_5, coverage = "cs_coverage_0.90"), expected_output_5)
+  expect_equal(merge_susie_cs(susie_fit_5, coverage = "CS_90_susie"), expected_output_5)
 
   # Test case 6: Multiple top_loci tables with mixed coverage indices
   susie_fit_6 <- list(
@@ -139,21 +115,21 @@ test_that("merge_susie_cs merges credible sets correctly", {
         top_loci = data.frame(
           variant_id = c("variant1", "variant2", "variant3"),
           pip = c(0.8, 0.6, 0.7),
-          cs_coverage_0.95 = c(1, 1, 2)
+          CS_95_susie = c(1, 1, 2)
         )
       ),
       condition_2 = list(
         top_loci = data.frame(
           variant_id = c("variant4", "variant5"),
           pip = c(0.9, 0.7),
-          cs_coverage_0.95 = c(2, 3)
+          CS_95_susie = c(2, 3)
         )
       ),
       condition_3 = list(
         top_loci = data.frame(
           variant_id = c("variant6", "variant7", "variant8"),
           pip = c(0.85, 0.75, 0.8),
-          cs_coverage_0.95 = c(1, 3, 2)
+          CS_95_susie = c(1, 3, 2)
         )
       )
     )
@@ -176,21 +152,21 @@ test_that("merge_susie_cs merges credible sets correctly", {
         top_loci = data.frame(
           variant_id = c("variant1", "variant2", "variant3"),
           pip = c(0.8, 0.6, 0.7),
-          cs_coverage_0.95 = c(1, 1, 2)
+          CS_95_susie = c(1, 1, 2)
         )
       ),
       condition_2 = list(
         top_loci = data.frame(
           variant_id = c("variant2", "variant3", "variant4"),
           pip = c(0.7, 0.9, 0.85),
-          cs_coverage_0.95 = c(2, 2, 1)
+          CS_95_susie = c(2, 2, 1)
         )
       ),
       condition_3 = list(
         top_loci = data.frame(
           variant_id = c("variant4", "variant5"),
           pip = c(0.75, 0.8),
-          cs_coverage_0.95 = c(3, 2)
+          CS_95_susie = c(3, 2)
         )
       )
     )
@@ -213,21 +189,21 @@ test_that("merge_susie_cs merges credible sets correctly", {
         top_loci = data.frame(
           variant_id = c("variant1", "variant2", "variant3"),
           pip = c(0.8, 0.6, 0.7),
-          cs_coverage_0.95 = c(1, 2, 3)
+          CS_95_susie = c(1, 2, 3)
         )
       ),
       condition_2 = list(
         top_loci = data.frame(
           variant_id = c("variant4", "variant5"),
           pip = c(0.9, 0.7),
-          cs_coverage_0.95 = c(3, 1)
+          CS_95_susie = c(3, 1)
         )
       ),
       condition_3 = list(
         top_loci = data.frame(
           variant_id = c("variant6", "variant7", "variant8"),
           pip = c(0.85, 0.75, 0.8),
-          cs_coverage_0.95 = c(2, 3, 1)
+          CS_95_susie = c(2, 3, 1)
         )
       )
     )
@@ -250,7 +226,7 @@ test_that("merge_susie_cs merges credible sets correctly", {
         top_loci = data.frame(
           variant_id = c("variant1", "variant2", "variant3", "variant4", "variant5"),
           pip = c(0.8, 0.6, 0.7, 0.9, 0.85),
-          cs_coverage_0.95 = c(1, 1, 2, 3, 2)
+          CS_95_susie = c(1, 1, 2, 3, 2)
         )
       )
     )
@@ -273,21 +249,21 @@ test_that("merge_susie_cs merges credible sets correctly", {
         top_loci = data.frame(
           variant_id = c("variant1", "variant2", "variant3"),
           pip = c(0.8, 0.6, 0.7),
-          cs_coverage_0.95 = c(1, 2, 1)
+          CS_95_susie = c(1, 2, 1)
         )
       ),
       condition_2 = list(
         top_loci = data.frame(
           variant_id = c("variant2", "variant4", "variant5"),
           pip = c(0.75, 0.9, 0.85),
-          cs_coverage_0.95 = c(2, 1, 3)
+          CS_95_susie = c(2, 1, 3)
         )
       ),
       condition_3 = list(
         top_loci = data.frame(
           variant_id = c("variant3", "variant5", "variant6"),
           pip = c(0.65, 0.8, 0.7),
-          cs_coverage_0.95 = c(3, 2, 1)
+          CS_95_susie = c(3, 2, 1)
         )
       )
     )
@@ -310,7 +286,7 @@ test_that("merge_susie_cs handles single condition with single CS", {
       top_loci = data.frame(
         variant_id = c("1:100:A:G", "1:200:C:T"),
         pip = c(0.9, 0.1),
-        cs_coverage_0.95 = c(1, 1),
+        CS_95_susie = c(1, 1),
         stringsAsFactors = FALSE
       )
     )

@@ -44,7 +44,7 @@ univariate_analysis_pipeline(
 
 \item{X_variance}{Optional variance of X. Default is NULL.}
 
-\item{other_quantities}{A list of other quantities to be passed to susie_post_processor. Default is an empty list.}
+\item{other_quantities}{A list of other quantities to be carried into fine-mapping post-processing. Default is an empty list.}
 
 \item{imiss_cutoff}{Individual missingness cutoff. Default is 1.0.}
 

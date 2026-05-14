@@ -28,13 +28,17 @@ calc_I2 <- function(Q, Est) {
 #' @param susie_result A list containing the results of SuSiE analysis. This list should include nested elements such as 'susie_results', 'susie_result_trimmed', and 'top_loci', containing details about the statistical analysis of genetic variants.
 #' @param condition A character string specifying the conditions. This is used to select the corresponding subset of results within 'susie_result'.
 #' @param gwas_sumstats_db A data frame containing summary statistics from GWAS studies. It should include columns for variant id and their associated statistics such as beta coefficients and standard errors.
-#' @param sets A character string indicating the method used to define sets of genetic variants. Defaults to "sets". This parameter is used to specify the type of sets to extract from the 'susie_result' object.
-#' @param coverage A character string specifying the coverage threshold for credible sets, used when 'sets' is not "sets". Defaults to "coverage_0.95", indicating a 95% coverage credible set.
+#' @param coverage A character string specifying the credible set column. If
+#'   NULL, it is derived from \code{coverage_level} and \code{method}.
 #' @param run_allele_qc Whether to run allele QC on variants. Default TRUE.
+#' @param method Fine-mapping method suffix used for method-specific columns.
+#' @param coverage_level Numeric credible set coverage used when \code{coverage}
+#'   is NULL.
 #' @return A data frame formatted for MR analysis or NULL if cs_list is empty.
 #' @importFrom stringr str_remove
 #' @export
-mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_coverage_0.95", run_allele_qc = TRUE,
+mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = NULL,
+                      run_allele_qc = TRUE, method = "susie", coverage_level = 0.95,
                       molecular_name_obj = c("susie_results", condition, "region_info", "region_name"), ld_meta_df) {
   mr_format_spec <- c(variant_id = "character", bhat_x = "numeric", sbhat_x = "numeric",
                       cs = "numeric", pip = "numeric", bhat_y = "numeric", sbhat_y = "numeric")
@@ -49,14 +53,22 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
     }
   )
   if (!is.data.frame(top_loci)) return(.create_null_mr_df(gene_name, mr_format_spec))
-  if (!any(unique(get_nested_element(top_loci, coverage)) != 0)) return(.create_null_mr_df(gene_name, mr_format_spec))
+  if (is.null(coverage)) coverage <- format_cs_column(coverage_level, method)
+  cs_values <- top_loci[[coverage]]
+  if (is.null(cs_values) || !any(!is.na(cs_values) & cs_values != 0)) {
+    return(.create_null_mr_df(gene_name, mr_format_spec))
+  }
+  pip_col <- resolve_pip_column(top_loci, method)
+  if (is.null(pip_col)) return(.create_null_mr_df(gene_name, mr_format_spec))
 
-  susie_cs_result_formatted <- top_loci %>%
+  susie_cs_result_formatted <- top_loci[!is.na(cs_values) & cs_values >= 1, , drop = FALSE] %>%
     mutate(gene_name = gene_name) %>%
-    filter(coverage >= 1) %>%
-    mutate(variant = strip_chr_prefix(variant_id)) %>%
-    select(gene_name, variant, betahat, sebetahat, all_of(coverage), pip) %>%
-    rename("bhat_x" = "betahat", "sbhat_x" = "sebetahat", "cs" = all_of(coverage))
+    mutate(
+      variant_id = normalize_variant_id(variant_id),
+      variant = strip_chr_prefix(variant_id)
+    ) %>%
+    select(gene_name, variant_id, variant, betahat, sebetahat, all_of(coverage), all_of(pip_col)) %>%
+    rename("bhat_x" = "betahat", "sbhat_x" = "sebetahat", "cs" = all_of(coverage), "pip" = all_of(pip_col))
 
   susie_pos <- stringr::str_split_i(susie_cs_result_formatted$variant, ":", 2)
   gwas_pos <- stringr::str_split_i(gwas_sumstats_db$variant_id, ":", 2)
@@ -86,8 +98,9 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
   # Normalize variant IDs to canonical format for matching
   gwas_sumstats_db_extracted$variant_id <- normalize_variant_id(gwas_sumstats_db_extracted$variant_id)
   common_variants <- intersect(susie_cs_result_formatted$variant_id, gwas_sumstats_db_extracted$variant_id)
+  if (length(common_variants) == 0) return(.create_null_mr_df(gene_name, mr_format_spec))
 
-  susie_cs_result_formatted[match(common_variants, susie_cs_result_formatted$variant), ] %>%
+  susie_cs_result_formatted[match(common_variants, susie_cs_result_formatted$variant_id), ] %>%
     cbind(., gwas_sumstats_db_extracted[match(common_variants, gwas_sumstats_db_extracted$variant_id), ] %>%
       select(beta, se) %>%
       rename("bhat_y" = "beta", "sbhat_y" = "se"))

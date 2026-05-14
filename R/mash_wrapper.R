@@ -305,10 +305,7 @@ load_multitrait_tensorqtl_sumstat <- function(
   return(out)
 }
 
-merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementary = FALSE) {
-  # Initialize an empty list for the combined_sets
-  combined_sets <- list()
-
+merge_susie_cs <- function(susie_fit, coverage = "CS_95_susie", method = NULL) {
   # Identify variant IDs that are associated with more than one credible set
   identify_overlap_sets <- function(variants_sets_and_pips_list) {
     overlap_sets <- list()
@@ -320,26 +317,31 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
     }
     return(overlap_sets)
   }
-  # Merge overlapping credible sets using graph connected components
+  # Merge overlapping credible sets using connected components.
   merge_and_update_overlap_sets <- function(variants_sets_and_pips_list, overlap_sets) {
-    # Collect all unique set names from overlap_sets
     all_sets <- unique(unlist(overlap_sets))
     if (length(all_sets) == 0) return(list())
 
-    # Build edges: each overlap_sets entry links its sets together
-    edges <- unlist(lapply(overlap_sets, function(sets) {
-      if (length(sets) < 2) return(character(0))
-      pairs <- combn(sets, 2)
-      as.character(pairs)
-    }))
+    parent <- stats::setNames(all_sets, all_sets)
+    find_root <- function(x) {
+      while (!identical(parent[[x]], x)) x <- parent[[x]]
+      x
+    }
+    union_sets <- function(a, b) {
+      root_a <- find_root(a)
+      root_b <- find_root(b)
+      if (!identical(root_a, root_b)) parent[[root_b]] <<- root_a
+    }
 
-    g <- igraph::make_graph(edges, directed = FALSE)
-    comp <- igraph::components(g)
+    for (sets in overlap_sets) {
+      if (length(sets) > 1) {
+        for (s in sets[-1]) union_sets(sets[[1]], s)
+      }
+    }
 
-    # Build mapping: each set name -> comma-separated merged component label
+    components <- split(names(parent), vapply(names(parent), find_root, character(1)))
     set_name_map <- list()
-    for (i in seq_len(comp$no)) {
-      members <- names(comp$membership[comp$membership == i])
+    for (members in components) {
       label <- paste(sort(members), collapse = ",")
       for (s in members) {
         set_name_map[[s]] <- label
@@ -362,27 +364,26 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
     return(updated_credible_sets)
   }
   # Loop through each condition and their credible sets
-  extract_top_loci <- function(susie_fit, complementary, coverage) {
+  extract_top_loci <- function(susie_fit, coverage) {
     # Build a flat data frame of (variant_id, pip, set_name) across all conditions
     cond_names <- names(susie_fit[[1]])
     rows <- purrr::map_dfr(seq_along(cond_names), function(i) {
       cond_data <- susie_fit[[1]][[i]]
       top_loci <- cond_data[["top_loci"]]
       if (is.null(top_loci) || nrow(top_loci) == 0) return(NULL)
+      pip_col <- resolve_pip_column(top_loci, method)
+      if (is.null(pip_col)) return(NULL)
 
-      if (!complementary) {
-        set_num <- unique(get_nested_element(cond_data, c("top_loci", coverage)))
-        set_num <- set_num[set_num != 0]
-      } else {
-        set_num <- 0
-      }
+      set_num <- unique(top_loci[[coverage]])
+      set_num <- set_num[!is.na(set_num) & set_num != 0]
       if (length(set_num) == 0) return(NULL)
 
       purrr::map_dfr(set_num, function(sn) {
-        top_loci %>%
-          filter(!!sym(coverage) == sn) %>%
-          select(variant_id, pip) %>%
-          mutate(set_name = paste0("cs_", i, "_", sn))
+        rows <- top_loci[top_loci[[coverage]] == sn & !is.na(top_loci[[coverage]]),
+                         c("variant_id", pip_col), drop = FALSE]
+        names(rows)[names(rows) == pip_col] <- "pip"
+        rows$set_name <- paste0("cs_", i, "_", sn)
+        rows
       })
     })
 
@@ -397,6 +398,8 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
   }
 
   combine_top_loci <- function(extracted_result) {
+    if (length(extracted_result) == 0) return(NULL)
+
     # Compute overlap sets once, outside the per-variant loop
     overlap_sets <- identify_overlap_sets(extracted_result)
     has_overlaps <- length(overlap_sets) != 0
@@ -422,8 +425,10 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
     return(top_loci_df)
   }
 
-  extracted_top_loci <- extract_top_loci(susie_fit, complementary, coverage = coverage)
+  extracted_top_loci <- extract_top_loci(susie_fit, coverage = coverage)
+  if (length(extracted_top_loci) == 0) return(NULL)
   combined_top_loci_df <- combine_top_loci(extracted_top_loci)
+  if (is.null(combined_top_loci_df) || nrow(combined_top_loci_df) == 0) return(NULL)
   # Clean up row names and make sure variant_id is unique
   combined_top_loci_df <- combined_top_loci_df[!duplicated(combined_top_loci_df$variant_id), ]
   rownames(combined_top_loci_df) <- NULL # Clean up row names
@@ -648,7 +653,7 @@ merge_mash_data <- function(res_data, one_data) {
     # bind_rows auto-aligns columns, filling missing with NA; replace with NaN
     rn_res <- rownames(as.data.frame(rd))
     rn_one <- rownames(as.data.frame(od))
-    combined <- dplyr::bind_rows(as.data.frame(rd), as.data.frame(od))
+    combined <- bind_rows(as.data.frame(rd), as.data.frame(od))
     combined[is.na(combined)] <- NaN
     rn_all <- make.names(c(rn_res, rn_one), unique = TRUE)
     rownames(combined) <- rn_all
@@ -845,6 +850,7 @@ merge_sumstats_matrices <- function(matrix_list, value_column, ref_panel = NULL,
 #' @param result_list_format A nested list used as a running result container.
 #'
 #' @importFrom stringr str_detect
+#' @importFrom rlang .data sym
 #' @import dplyr tidyr tibble                
 #' @return The updated `result_list_format` with processed results for the specified gene and condition.
 #' @export

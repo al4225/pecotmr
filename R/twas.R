@@ -297,7 +297,9 @@ twas_pipeline <- function(twas_weights_data,
                           rsq_option = c("rsq", "adj_rsq"),
                           rsq_pval_option = c("pval", "adj_rsq_pval"),
                           mr_pval_cutoff = 0.05,
-                          mr_coverage_column = "cs_coverage_0.95",
+                          mr_coverage_column = NULL,
+                          mr_method = "susie",
+                          mr_coverage = 0.95,
                           output_twas_data = FALSE,
                           event_filters=NULL,
                           column_file_path = NULL,
@@ -508,7 +510,9 @@ twas_pipeline <- function(twas_weights_data,
           }
           combined_ld_meta_df <- twas_data_qced_result$ref_panel
           mr_formatted_input <- mr_format(twas_weights_data[[weight_db]], context, twas_data_qced[[weight_db]][["gwas_qced"]][[study]],
-            coverage = mr_coverage_column, run_allele_qc = TRUE, molecular_name_obj = c("molecular_id"), ld_meta_df = combined_ld_meta_df
+            coverage = mr_coverage_column, run_allele_qc = TRUE, method = mr_method,
+            coverage_level = mr_coverage, molecular_name_obj = c("molecular_id"),
+            ld_meta_df = combined_ld_meta_df
           )
           if (all(is.na(mr_formatted_input$bhat_y))) {
             # FIXME: after updating gwas beta and se NA problem, mr analysis will be restored

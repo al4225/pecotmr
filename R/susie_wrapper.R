@@ -48,6 +48,452 @@ lbf_to_alpha <- function(lbf) {
   return(alpha_matrix)
 }
 
+format_pip_column <- function(method) {
+  paste0("pip_", method)
+}
+
+resolve_pip_column <- function(top_loci, method = NULL) {
+  if (is.null(top_loci) || nrow(top_loci) == 0) return(NULL)
+  if (!is.null(method)) {
+    pip_col <- format_pip_column(method)
+    if (pip_col %in% names(top_loci)) return(pip_col)
+  }
+  if ("pip" %in% names(top_loci)) return("pip")
+  pip_cols <- grep("^pip_", names(top_loci), value = TRUE)
+  if (length(pip_cols) == 1) return(pip_cols)
+  NULL
+}
+
+format_cs_column <- function(coverage, method) {
+  pct <- as.numeric(coverage) * 100
+  if (is.na(pct)) stop("coverage must be numeric.")
+  label <- if (abs(pct - round(pct)) < 1e-8) {
+    as.character(as.integer(round(pct)))
+  } else {
+    gsub("\\.", "_", format(pct, scientific = FALSE, trim = TRUE))
+  }
+  paste0("CS_", label, "_", method)
+}
+
+tag_finemapping_fit <- function(fit, method) {
+  if (is.null(fit)) return(NULL)
+  method_class <- switch(method,
+    susie = "susie",
+    susie_inf = "susie_inf",
+    susie_rss = "susie_rss",
+    single_effect = "susie_rss",
+    bayesian_conditional_regression = "susie_rss",
+    fsusie = "susiF",
+    mvsusie = "mvsusie",
+    NULL
+  )
+  if (!is.null(method_class)) class(fit) <- unique(c(method_class, class(fit)))
+  fit
+}
+
+#' Post-process Fine-mapping Fits
+#'
+#' Applies method-aware post-processing to one or more SuSiE-family fits and
+#' builds both a method-specific result list and shared top-loci tables.
+#'
+#' @param fits Named list of fine-mapping fits. Names define method identity,
+#'   for example \code{susie}, \code{susie_inf}, \code{susie_rss},
+#'   \code{mvsusie}, or \code{fsusie}.
+#' @param data_x Genotype matrix, LD/correlation matrix, or other method-specific
+#'   input used for credible-set purity and correlations.
+#' @param data_y Phenotype vector/matrix or summary statistics. Default NULL.
+#' @param X_scalar Scaling factor for genotype effects. Default 1.
+#' @param y_scalar Scaling factor for phenotype effects. Default 1.
+#' @param maf Minor allele frequencies. Default NULL.
+#' @param coverage Primary credible-set coverage.
+#' @param secondary_coverage Additional credible-set coverages.
+#' @param signal_cutoff PIP cutoff for including non-CS variants in top loci.
+#' @param other_quantities Optional list carried into each method result.
+#' @param prior_eff_tol Tolerance for retaining effects by prior variance.
+#' @param min_abs_corr Minimum absolute correlation for credible-set purity.
+#' @return A list with \code{finemapping_results}, \code{top_loci_long}, and
+#'   \code{top_loci}. The long table is lossless, with one row per
+#'   variant-method-coverage-CS membership. The wide table stores one row per
+#'   variant, method-specific \code{pip_<method>} columns, method-specific
+#'   \code{CS_<coverage>_<method>} columns, and \code{model_source}.
+#' @export
+postprocess_finemapping_fits <- function(fits, data_x, data_y = NULL,
+                                         X_scalar = 1, y_scalar = 1,
+                                         maf = NULL, coverage = NULL,
+                                         secondary_coverage = c(0.7, 0.5),
+                                         signal_cutoff = 0.1,
+                                         other_quantities = NULL,
+                                         prior_eff_tol = 1e-9,
+                                         min_abs_corr = 0.8) {
+  fits <- fits[!vapply(fits, is.null, logical(1))]
+  if (length(fits) == 0) stop("At least one fine-mapping fit must be supplied.")
+  if (is.null(names(fits)) || any(names(fits) == "")) {
+    stop("fits must be a named list; names define method identity.")
+  }
+
+  posts <- lapply(names(fits), function(method) {
+    fit <- tag_finemapping_fit(fits[[method]], method)
+    postprocess_finemapping_fit(
+      fit, method = method, data_x = data_x, data_y = data_y,
+      X_scalar = X_scalar, y_scalar = y_scalar, maf = maf,
+      coverage = coverage, secondary_coverage = secondary_coverage,
+      signal_cutoff = signal_cutoff, other_quantities = other_quantities,
+      prior_eff_tol = prior_eff_tol, min_abs_corr = min_abs_corr
+    )
+  })
+  names(posts) <- names(fits)
+
+  top_loci_long <- bind_rows(lapply(posts, function(x) x$top_loci_long))
+  top_loci <- build_top_loci_wide(top_loci_long, posts)
+
+  list(
+    finemapping_results = posts,
+    top_loci_long = if (nrow(top_loci_long) > 0) top_loci_long else NULL,
+    top_loci = top_loci
+  )
+}
+
+postprocess_finemapping_fit <- function(fit, ...) {
+  UseMethod("postprocess_finemapping_fit")
+}
+
+postprocess_finemapping_fit.susie <- function(fit, method = "susie", ...) {
+  .postprocess_finemapping_fit_common(fit, method = method, cs_input = "X", ...)
+}
+
+postprocess_finemapping_fit.susie_inf <- function(fit, method = "susie_inf", ...) {
+  .postprocess_finemapping_fit_common(fit, method = method, cs_input = "X", ...)
+}
+
+postprocess_finemapping_fit.susie_rss <- function(fit, method = "susie_rss", ...) {
+  .postprocess_finemapping_fit_common(fit, method = method, cs_input = "Xcorr", ...)
+}
+
+postprocess_finemapping_fit.mvsusie <- function(fit, method = "mvsusie", ...) {
+  .postprocess_finemapping_fit_common(fit, method = method, cs_input = "X", ...)
+}
+
+postprocess_finemapping_fit.susiF <- function(fit, method = "fsusie", ...) {
+  .postprocess_finemapping_fit_common(fit, method = method, cs_input = "fsusie", ...)
+}
+
+.postprocess_finemapping_fit_common <- function(fit, method, data_x, data_y = NULL,
+                                                X_scalar = 1, y_scalar = 1,
+                                                maf = NULL, coverage = NULL,
+                                                secondary_coverage = c(0.7, 0.5),
+                                                signal_cutoff = 0.1,
+                                                other_quantities = NULL,
+                                                prior_eff_tol = 1e-9,
+                                                min_abs_corr = 0.8,
+                                                cs_input = c("X", "Xcorr", "fsusie")) {
+  cs_input <- match.arg(cs_input)
+  variant_names <- extract_variant_names(fit)
+  sumstats <- extract_sumstats(fit, data_x, data_y, X_scalar, y_scalar, method)
+  effect_idx <- select_effects(fit, prior_eff_tol)
+  cs_tables <- compute_cs_tables(
+    fit, data_x = data_x, coverage = coverage,
+    secondary_coverage = secondary_coverage, method = method,
+    cs_input = cs_input, min_abs_corr = min_abs_corr
+  )
+  top_loci_long <- build_top_loci_long(
+    fit, cs_tables, variant_names = variant_names, sumstats = sumstats,
+    maf = maf, method = method, signal_cutoff = signal_cutoff
+  )
+
+  res <- list(
+    variant_names = variant_names,
+    result_trimmed = trim_finemapping_fit(fit, effect_idx, method, cs_tables),
+    top_loci_long = top_loci_long
+  )
+  if (!is.null(sumstats)) res$sumstats <- sumstats
+  sample_names <- .sample_names_from_data_y(data_y)
+  if (!is.null(sample_names)) res$sample_names <- sample_names
+  if (method == "mvsusie" && !is.null(fit$outcome_names)) res$context_names <- fit$outcome_names
+  analysis_script <- load_script()
+  if (analysis_script != "") res$analysis_script <- analysis_script
+  if (!is.null(other_quantities)) res$other_quantities <- other_quantities
+  res
+}
+
+extract_variant_names <- function(fit) {
+  variant_names <- names(fit$pip)
+  if (is.null(variant_names)) variant_names <- colnames(fit$alpha)
+  if (is.null(variant_names)) variant_names <- paste0("variant_", seq_along(fit$pip))
+  tryCatch(normalize_variant_id(variant_names), error = function(e) variant_names)
+}
+
+extract_sumstats <- function(fit, data_x, data_y, X_scalar = 1, y_scalar = 1, method = "susie") {
+  if (is.null(data_y)) return(NULL)
+  if (method == "susie_rss") return(data_y)
+  if (is.list(data_y) && !is.data.frame(data_y) &&
+      any(c("betahat", "sebetahat", "z") %in% names(data_y))) {
+    return(data_y)
+  }
+  if (is.null(data_x)) return(NULL)
+  if (is.matrix(data_y) || is.data.frame(data_y)) {
+    if (ncol(as.matrix(data_y)) != 1) return(NULL)
+  }
+  sumstats <- univariate_regression(data_x, data_y)
+  y_scalar <- if (is.null(y_scalar) || all(y_scalar == 1)) 1 else y_scalar
+  X_scalar <- if (is.null(X_scalar) || all(X_scalar == 1)) 1 else X_scalar
+  sumstats$betahat <- sumstats$betahat * y_scalar / X_scalar
+  sumstats$sebetahat <- sumstats$sebetahat * y_scalar / X_scalar
+  sumstats
+}
+
+.sample_names_from_data_y <- function(data_y) {
+  if (is.null(data_y) || is.list(data_y)) return(NULL)
+  rownames(as.matrix(data_y))
+}
+
+select_effects <- function(fit, prior_eff_tol = 1e-9) {
+  alpha <- .as_effect_matrix(fit$alpha)
+  n_effects <- nrow(alpha)
+  if (n_effects == 0) return(integer(0))
+  if (!is.null(fit$V)) {
+    which(fit$V > prior_eff_tol)
+  } else {
+    seq_len(n_effects)
+  }
+}
+
+.as_effect_matrix <- function(x) {
+  if (is.null(x)) return(matrix(numeric(0), nrow = 0))
+  if (is.list(x) && !is.data.frame(x)) return(do.call(rbind, x))
+  as.matrix(x)
+}
+
+.as_lbf_matrix <- function(fit) {
+  if (!is.null(fit$lbf_variable)) return(.as_effect_matrix(fit$lbf_variable))
+  if (!is.null(fit$lBF)) return(.as_effect_matrix(fit$lBF))
+  NULL
+}
+
+compute_cs_tables <- function(fit, data_x, coverage = NULL,
+                              secondary_coverage = c(0.7, 0.5),
+                              method = "susie", cs_input = c("X", "Xcorr", "fsusie"),
+                              min_abs_corr = 0.8) {
+  cs_input <- match.arg(cs_input)
+  primary_coverage <- coverage
+  if (is.null(primary_coverage)) primary_coverage <- fit$sets$requested_coverage
+  if (is.null(primary_coverage)) primary_coverage <- 0.95
+  coverages <- unique(c(primary_coverage, secondary_coverage))
+  coverages <- coverages[!is.na(coverages)]
+
+  tables <- lapply(coverages, function(cov) {
+    compute_cs_table(fit, data_x, coverage = cov, cs_input = cs_input, min_abs_corr = min_abs_corr)
+  })
+  names(tables) <- vapply(coverages, format_cs_column, character(1), method = method)
+  attr(tables, "coverage") <- coverages
+  tables
+}
+
+compute_cs_table <- function(fit, data_x, coverage, cs_input = c("X", "Xcorr", "fsusie"),
+                             min_abs_corr = 0.8) {
+  cs_input <- match.arg(cs_input)
+  if (cs_input == "fsusie") {
+    sets <- tryCatch(
+      fsusie_get_cs(fit, data_x, requested_coverage = coverage),
+      error = function(e) list(cs = list(), requested_coverage = coverage)
+    )
+    if (is.null(sets$cs) || length(sets$cs) == 0 || all(vapply(sets$cs, is.null, logical(1)))) {
+      sets$cs <- list()
+      return(list(sets = sets, cs_corr = NULL, pip = fit$pip))
+    }
+    tmp <- fit
+    tmp$sets <- sets
+    cs_corr <- if (requireNamespace("fsusieR", quietly = TRUE)) {
+      tryCatch(fsusieR::cal_cor_cs(tmp, data_x), error = function(e) NULL)
+    } else {
+      NULL
+    }
+    return(list(sets = sets, cs_corr = cs_corr, pip = fit$pip))
+  }
+
+  if (cs_input == "X") {
+    sets <- susie_get_cs(fit, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr)
+    out <- list(sets = sets, pip = fit$pip)
+    out$cs_corr <- get_cs_correlation(out, X = data_x)
+  } else {
+    sets <- susie_get_cs(fit, Xcorr = data_x, coverage = coverage, min_abs_corr = min_abs_corr)
+    out <- list(sets = sets, pip = fit$pip)
+    out$cs_corr <- get_cs_correlation(out, Xcorr = data_x)
+  }
+  out
+}
+
+build_top_loci_long <- function(fit, cs_tables, variant_names, sumstats = NULL,
+                                maf = NULL, method, signal_cutoff = 0.1) {
+  if (length(cs_tables) == 0) return(.empty_top_loci_long())
+  coverage_values <- attr(cs_tables, "coverage")
+  rows <- lapply(seq_along(cs_tables), function(i) {
+    cs_table <- cs_tables[[i]]
+    cov <- coverage_values[[i]]
+    top_variants_idx <- get_top_variants_idx(cs_table, signal_cutoff)
+    cs_info <- get_cs_info(cs_table$sets$cs, top_variants_idx)
+    if (is.null(cs_info) || nrow(cs_info) == 0) return(NULL)
+    idx <- cs_info$variant_idx
+    optional_cols <- .top_loci_optional_columns(idx, sumstats, maf)
+    base <- data.frame(
+      variant_id = variant_names[idx],
+      method = method,
+      coverage = cov,
+      cs = as.integer(cs_info$cs_idx),
+      pip = as.numeric(fit$pip[idx]),
+      stringsAsFactors = FALSE
+    )
+    if (ncol(optional_cols) > 0) cbind(base, optional_cols) else base
+  })
+  out <- bind_rows(rows)
+  if (nrow(out) == 0) .empty_top_loci_long() else out
+}
+
+.empty_top_loci_long <- function() {
+  data.frame(
+    variant_id = character(), method = character(), coverage = numeric(),
+    cs = integer(), pip = numeric(), stringsAsFactors = FALSE
+  )
+}
+
+.top_loci_optional_columns <- function(idx, sumstats = NULL, maf = NULL) {
+  optional_cols <- list(
+    betahat = if (!is.null(sumstats$betahat)) sumstats$betahat[idx] else NULL,
+    sebetahat = if (!is.null(sumstats$sebetahat)) sumstats$sebetahat[idx] else NULL,
+    z = if (!is.null(sumstats$z)) sumstats$z[idx] else NULL,
+    maf = if (!is.null(maf)) maf[idx] else NULL
+  )
+  as.data.frame(Filter(Negate(is.null), optional_cols))
+}
+
+build_top_loci_wide <- function(top_loci_long, posts) {
+  if (is.null(top_loci_long) || nrow(top_loci_long) == 0) return(NULL)
+  ids <- unique(top_loci_long$variant_id)
+  out <- data.frame(variant_id = ids, stringsAsFactors = FALSE)
+  for (column in c("betahat", "sebetahat", "z", "maf")) {
+    if (column %in% names(top_loci_long)) {
+      out[[column]] <- vapply(ids, function(id) {
+        values <- top_loci_long[[column]][top_loci_long$variant_id == id]
+        values <- values[!is.na(values)]
+        if (length(values) == 0) NA_real_ else values[[1]]
+      }, numeric(1))
+    }
+  }
+
+  methods <- names(posts)
+  for (method in methods) {
+    post <- posts[[method]]
+    pip_col <- format_pip_column(method)
+    pip <- post$result_trimmed$pip
+    names(pip) <- post$variant_names
+    out[[pip_col]] <- as.numeric(pip[ids])
+
+    method_rows <- top_loci_long[top_loci_long$method == method, , drop = FALSE]
+    for (cov in unique(method_rows$coverage)) {
+      cs_col <- format_cs_column(cov, method)
+      out[[cs_col]] <- vapply(ids, function(id) {
+        cs <- method_rows$cs[method_rows$variant_id == id & method_rows$coverage == cov]
+        if (length(cs) == 0) return(NA_integer_)
+        min(cs)
+      }, integer(1))
+    }
+  }
+
+  out$model_source <- vapply(ids, function(id) {
+    selected_methods <- unique(top_loci_long$method[top_loci_long$variant_id == id])
+    paste(selected_methods[selected_methods %in% methods], collapse = ";")
+  }, character(1))
+  rownames(out) <- NULL
+  out
+}
+
+trim_finemapping_fit <- function(fit, effect_idx, method, cs_tables) {
+  alpha <- .as_effect_matrix(fit$alpha)
+  lbf_variable <- .as_lbf_matrix(fit)
+  primary <- cs_tables[[1]]
+  secondary <- if (length(cs_tables) > 1) {
+    lapply(cs_tables[-1], function(x) x[names(x) != "pip"])
+  } else {
+    NULL
+  }
+
+  trimmed <- list(
+    pip = as.numeric(fit$pip),
+    sets = primary$sets,
+    cs_corr = primary$cs_corr,
+    sets_secondary = secondary,
+    alpha = alpha[effect_idx, , drop = FALSE],
+    lbf_variable = if (!is.null(lbf_variable)) lbf_variable[effect_idx, , drop = FALSE] else NULL,
+    V = if (!is.null(fit$V)) fit$V[effect_idx] else NULL,
+    niter = fit$niter,
+    n_effects = nrow(alpha)
+  )
+
+  if (!is.null(fit$X_column_scale_factors)) trimmed$X_column_scale_factors <- fit$X_column_scale_factors
+  if (!is.null(fit$mu)) {
+    trimmed$mu <- if (length(dim(fit$mu)) == 3) fit$mu[effect_idx, , , drop = FALSE] else fit$mu[effect_idx, , drop = FALSE]
+  }
+  if (!is.null(fit$mu2)) trimmed$mu2 <- fit$mu2[effect_idx, , drop = FALSE]
+  if (!is.null(fit$theta)) trimmed$theta <- fit$theta
+  if (!is.null(fit$omega_weights)) trimmed$omega_weights <- fit$omega_weights
+
+  if (method == "mvsusie") {
+    if (!is.null(fit$mu2_diag)) trimmed$mu2_diag <- fit$mu2_diag[effect_idx, , , drop = FALSE]
+    if (requireNamespace("mvsusieR", quietly = TRUE)) {
+      trimmed$coef <- mvsusieR::coef.mvsusie(fit)[-1, , drop = FALSE]
+    }
+    if (!is.null(fit$conditional_lfsr)) trimmed$clfsr <- fit$conditional_lfsr[effect_idx, , , drop = FALSE]
+  }
+
+  class(trimmed) <- unique(c(method, "susie"))
+  trimmed
+}
+
+add_protocol_top_loci_fields <- function(top_loci, primary_method) {
+  if (is.null(top_loci) || nrow(top_loci) == 0) return(top_loci)
+
+  pip_col <- resolve_pip_column(top_loci, primary_method)
+  if (!is.null(pip_col)) {
+    top_loci$pip <- top_loci[[pip_col]]
+  }
+  top_loci
+}
+
+.top_loci_variants <- function(top_loci, variant_col = "variant_id") {
+  if (is.null(top_loci) || nrow(top_loci) == 0 || !variant_col %in% names(top_loci)) {
+    return(character(0))
+  }
+  unique(top_loci[[variant_col]])
+}
+
+#' Format Fine-mapping Post-processing for Protocol Output
+#'
+#' Converts method-aware fine-mapping post-processing output into the root-level
+#' fields consumed by protocol RDS files.
+#'
+#' @param post Output from \code{\link{postprocess_finemapping_fits}}.
+#' @param primary_method Method whose result should populate root-level fields.
+#' @return A list with root-level fields including \code{variant_names},
+#'   \code{susie_result_trimmed}, \code{top_loci}, and
+#'   \code{top_loci_variants}.
+#' @export
+format_finemapping_output <- function(post, primary_method) {
+  method_post <- post$finemapping_results[[primary_method]]
+  if (is.null(method_post)) {
+    stop("primary_method was not found in finemapping_results: ", primary_method)
+  }
+  keep_names <- setdiff(names(method_post), c("result_trimmed", "top_loci_long"))
+  c(
+    method_post[keep_names],
+    list(
+      susie_result_trimmed = method_post$result_trimmed,
+      finemapping_results = post$finemapping_results,
+      top_loci_long = post$top_loci_long,
+      top_loci = add_protocol_top_loci_fields(post$top_loci, primary_method),
+      top_loci_variants = .top_loci_variants(post$top_loci)
+    )
+  )
+}
+
 #' Adjust SuSiE Weights
 #'
 #' Adjusts SuSiE TWAS weights by subsetting to intersected variants and
@@ -128,7 +574,7 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, run_allele
 #' @param analysis_method One of "susie_rss", "single_effect", "bayesian_conditional_regression".
 #' @param coverage Coverage level (default: 0.95).
 #' @param secondary_coverage Secondary coverage levels (default: c(0.7, 0.5)).
-#' @param signal_cutoff PIP cutoff for susie_post_processor (default: 0.1).
+#' @param signal_cutoff PIP cutoff for selecting top loci (default: 0.1).
 #' @param min_abs_corr Minimum absolute correlation for CS purity (default: 0.8).
 #' @param R_finite Controls variance inflation to account for estimating
 #'   the R matrix from a finite reference panel. NULL (default): no
@@ -136,7 +582,9 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, run_allele
 #' @param R_mismatch LD mismatch correction method passed directly to susie_rss.
 #'   Default NULL disables mismatch correction.
 #' @param ... Additional parameters passed to susie_rss (e.g., var_y).
-#' @return A list with post-processed SuSiE RSS results.
+#' @return A list with post-processed SuSiE RSS results. Method-specific
+#'   \code{top_loci} columns use the selected \code{analysis_method}, for
+#'   example \code{pip_susie_rss} or \code{pip_single_effect}.
 #' @importFrom susieR susie_rss
 #' @importFrom magrittr %>%
 #' @importFrom dplyr arrange select
@@ -161,6 +609,12 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
   } else {
     stop("sumstats must have 'z' or ('beta' and 'se') columns.")
   }
+  if (is.null(names(z)) && !is.null(sumstats$variant_id) && length(sumstats$variant_id) == length(z)) {
+    names(z) <- sumstats$variant_id
+  }
+  if (is.null(names(z)) && !is.null(rownames(sumstats)) && length(rownames(sumstats)) == length(z)) {
+    names(z) <- rownames(sumstats)
+  }
 
   common <- list(z = z, n = n, coverage = coverage,
                  R_finite = R_finite, R_mismatch = R_mismatch, ...)
@@ -184,12 +638,18 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
     data_x <- compute_LD(X_mat[, seq_along(z), drop = FALSE], method = "sample")
   }
 
-  res <- susie_post_processor(res,
-    data_x = data_x, data_y = list(z = z),
-    signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage,
-    min_abs_corr = min_abs_corr, mode = "susie_rss"
+  rss_method <- analysis_method
+  rss_fit <- tag_finemapping_fit(res, rss_method)
+  post <- postprocess_finemapping_fits(
+    fits = setNames(list(rss_fit), rss_method),
+    data_x = data_x,
+    data_y = list(z = z),
+    coverage = coverage,
+    secondary_coverage = secondary_coverage,
+    signal_cutoff = signal_cutoff,
+    min_abs_corr = min_abs_corr
   )
-  res
+  format_finemapping_output(post, primary_method = rss_method)
 }
 
 #' @noRd
@@ -220,172 +680,4 @@ get_cs_info <- function(susie_output_sets_cs, top_variants_idx) {
     }
   })
   do.call(rbind, rows)
-}
-#' @noRd
-get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie"), min_abs_corr = NULL) {
-  if (mode %in% c("susie", "mvsusie")) {
-    susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr), pip = susie_output$pip)
-    susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, X = data_x)
-  } else {
-    susie_output_secondary <- list(sets = susie_get_cs(susie_output, Xcorr = data_x, coverage = coverage, min_abs_corr = min_abs_corr), pip = susie_output$pip)
-    susie_output_secondary$cs_corr <- get_cs_correlation(susie_output_secondary, Xcorr = data_x)
-  }
-  susie_output_secondary
-}
-
-#' Post-process SuSiE Analysis Results
-#'
-#' This function processes the results from SuSiE (Sum of Single Effects) genetic analysis.
-#' It extracts and processes various statistics and indices based on the provided SuSiE object and other parameters.
-#' The function can operate in 3 modes: 'susie', 'susie_rss', 'mvsusie', based on the method used for the SuSiE analysis.
-#'
-#' @param susie_output Output from running susieR::susie() or susieR::susie_rss() or mvsusieR::mvsusie()
-#' @param data_x Genotype data matrix for 'susie' or Xcorr matrix for 'susie_rss'.
-#' @param data_y Phenotype data vector for 'susie' or summary stats object for 'susie_rss' (a list contain attribute betahat and sebetahat AND/OR z). i.e. data_y = list(betahat = ..., sebetahat = ...), or NULL for mvsusie
-#' @param X_scalar Scalar for the genotype data, used in residual scaling.
-#' @param y_scalar Scalar for the phenotype data, used in residual scaling.
-#' @param maf Minor Allele Frequencies vector.
-#' @param secondary_coverage Vector of coverage thresholds for secondary conditional analysis.
-#' @param signal_cutoff Cutoff value for signal identification in PIP values.
-#' @param other_quantities A list of other quantities to be added to the final object.
-#' @param prior_eff_tol Prior effective tolerance.
-#' @param min_abs_corr Minimum absolute correlation for credible set purity filtering.
-#'   Default is 0.8, which is stricter than the susieR default of 0.5. Credible sets
-#'   with purity below this threshold are excluded from the results.
-#' @param mode Specify the analysis mode: 'susie', 'susie_rss', or 'mvsusie'.
-#' @return A list containing modified SuSiE object along with additional post-processing information.
-#' @examples
-#' # Example usage for SuSiE
-#' # result <- susie_post_processor(susie_output, X_data, y_data, maf, mode = "susie")
-#' # Example usage for SuSiE RSS
-#' # result <- susie_post_processor(susie_output, Xcorr, z, maf, mode = "susie_rss")
-#' @importFrom dplyr full_join
-#' @importFrom purrr map_int pmap
-#' @importFrom susieR get_cs_correlation susie_get_cs
-#' @importFrom stringr str_replace
-#' @export
-susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scalar, maf = NULL,
-                                 secondary_coverage = c(0.5, 0.7), signal_cutoff = 0.1,
-                                 other_quantities = NULL, prior_eff_tol = 1e-9, min_abs_corr = 0.8,
-                                 mode = c("susie", "susie_rss", "mvsusie")) {
-  mode <- match.arg(mode)
-  # Initialize result list
-  res <- list(
-    variant_names = normalize_variant_id(names(susie_output$pip))
-  )
-  analysis_script <- load_script()
-  if (analysis_script != "") res$analysis_script <- analysis_script
-  if (!is.null(other_quantities)) res$other_quantities <- other_quantities
-  if (mode == "mvsusie") {
-    res$context_names <- susie_output$outcome_names
-  }
-  if (!is.null(data_y)) {
-    # Mode-specific processing
-    if (mode == "susie") {
-      # Processing specific to susie_post_processor
-      res$sumstats <- univariate_regression(data_x, data_y)
-      y_scalar <- if (is.null(y_scalar) || all(y_scalar == 1)) 1 else y_scalar
-      X_scalar <- if (is.null(X_scalar) || all(X_scalar == 1)) 1 else X_scalar
-      res$sumstats$betahat <- res$sumstats$betahat * y_scalar / X_scalar
-      res$sumstats$sebetahat <- res$sumstats$sebetahat * y_scalar / X_scalar
-      res$sample_names <- rownames(data_y)
-    } else if (mode == "susie_rss") {
-      # Processing specific to susie_rss_post_processor
-      res$sumstats <- data_y
-    }
-  }
-  n_effects <- nrow(susie_output$alpha)
-  if (!is.null(susie_output$V)) {
-    # for fSuSiE there is no V for now
-    eff_idx <- which(susie_output$V > prior_eff_tol)
-  } else {
-    eff_idx <- seq_len(n_effects)
-  }
-
-  # Re-filter primary CS purity (susieR default is 0.5, pecotmr default is 0.8)
-  if (mode %in% c("susie", "mvsusie")) {
-    susie_output$sets <- susie_get_cs(susie_output, X = data_x, coverage = susie_output$sets$requested_coverage, min_abs_corr = min_abs_corr)
-  } else {
-    susie_output$sets <- susie_get_cs(susie_output, Xcorr = data_x, coverage = susie_output$sets$requested_coverage, min_abs_corr = min_abs_corr)
-  }
-
-  if (length(eff_idx) > 0) {
-    # Prepare for top loci table
-    top_variants_idx_pri <- get_top_variants_idx(susie_output, signal_cutoff)
-    # get_cs_info returns data.frame(variant_idx, cs_idx) with one row per (variant, CS) pair
-    top_loci_pri <- get_cs_info(susie_output$sets$cs, top_variants_idx_pri)
-    if (is.null(top_loci_pri)) top_loci_pri <- data.frame(variant_idx = integer(0), cs_idx = integer(0))
-    susie_output$cs_corr <- if (mode %in% c("susie", "mvsusie")) get_cs_correlation(susie_output, X = data_x) else get_cs_correlation(susie_output, Xcorr = data_x)
-    top_loci_list <- list("coverage_0.95" = top_loci_pri)
-
-    ## Loop over each secondary coverage value independently
-    sets_secondary <- list()
-    if (!is.null(secondary_coverage) && length(secondary_coverage)) {
-      for (sec_cov in secondary_coverage) {
-        sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(susie_output, sec_cov, data_x, mode, min_abs_corr)
-        top_variants_idx_sec <- get_top_variants_idx(sets_secondary[[paste0("coverage_", sec_cov)]], signal_cutoff)
-        top_loci_sec <- get_cs_info(sets_secondary[[paste0("coverage_", sec_cov)]]$sets$cs, top_variants_idx_sec)
-        if (is.null(top_loci_sec)) top_loci_sec <- data.frame(variant_idx = integer(0), cs_idx = integer(0))
-        top_loci_list[[paste0("coverage_", sec_cov)]] <- top_loci_sec
-      }
-    }
-
-    # Merge coverage tables via full_join
-    names(top_loci_list[[1]])[2] <- paste0("cs_", names(top_loci_list)[1])
-    top_loci <- top_loci_list[[1]]
-    if (length(top_loci_list) > 1) {
-      for (i in 2:length(top_loci_list)) {
-        names(top_loci_list[[i]])[2] <- paste0("cs_", names(top_loci_list)[i])
-        top_loci <- dplyr::full_join(top_loci, top_loci_list[[i]], by = "variant_idx")
-      }
-    }
-
-    if (nrow(top_loci) > 0) {
-      top_loci[is.na(top_loci)] <- 0
-      idx <- top_loci$variant_idx
-      optional_cols <- list(
-        betahat = if (!is.null(res$sumstats$betahat)) res$sumstats$betahat[idx],
-        sebetahat = if (!is.null(res$sumstats$sebetahat)) res$sumstats$sebetahat[idx],
-        z = if (!is.null(res$sumstats$z)) res$sumstats$z[idx],
-        maf = if (!is.null(maf)) maf[idx]
-      )
-      optional_cols <- Filter(Negate(is.null), optional_cols)
-      res$top_loci <- cbind(
-        data.frame(variant_id = res$variant_names[idx], stringsAsFactors = FALSE),
-        as.data.frame(optional_cols),
-        data.frame(pip = susie_output$pip[idx]),
-        top_loci[, -1, drop = FALSE]
-      )
-      rownames(res$top_loci) <- NULL
-    }
-    names(susie_output$pip) <- NULL
-    res$susie_result_trimmed <- list(
-      pip = susie_output$pip,
-      sets = susie_output$sets,
-      cs_corr = susie_output$cs_corr,
-      sets_secondary = if (length(sets_secondary)) lapply(sets_secondary, function(x) x[names(x) != "pip"]) else NULL,
-      alpha = susie_output$alpha[eff_idx, , drop = FALSE],
-      lbf_variable = susie_output$lbf_variable[eff_idx, , drop = FALSE],
-      V = if (!is.null(susie_output$V)) susie_output$V[eff_idx] else NULL,
-      niter = susie_output$niter,
-      n_effects = n_effects
-    )
-    if (mode == "susie") {
-      res$susie_result_trimmed$X_column_scale_factors <- susie_output$X_column_scale_factors
-      res$susie_result_trimmed$mu <- susie_output$mu[eff_idx, , drop = FALSE]
-      res$susie_result_trimmed$mu2 <- susie_output$mu2[eff_idx, , drop = FALSE]
-    }
-    if (mode == "mvsusie") {
-      res$susie_result_trimmed$mu <- susie_output$mu[eff_idx, , , drop = FALSE]
-      res$susie_result_trimmed$mu2_diag <- susie_output$mu2_diag[eff_idx, , , drop = FALSE]
-      res$susie_result_trimmed$X_column_scale_factors <- susie_output$X_column_scale_factors
-      res$susie_result_trimmed$coef <- mvsusieR::coef.mvsusie(susie_output)[-1, , drop = FALSE]
-      res$susie_result_trimmed$clfsr <- susie_output$conditional_lfsr[eff_idx, , , drop = FALSE]
-      # other lfsr can be computed:
-      # se_lfsr <- mvsusie_single_effect_lfsr(clfsr, alpha)
-      # lfsr <- mvsusie_get_lfsr(clfsr, alpha)
-    }
-    class(res$susie_result_trimmed) <- "susie"
-  }
-  return(res)
 }

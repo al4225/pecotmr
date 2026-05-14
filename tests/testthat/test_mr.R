@@ -20,9 +20,9 @@ top_loci_mock <- data.frame(
   sebetahat = runif(num_variants, 0.05, 0.1),
   #maf = runif(n_entries, 0.1, 0.5),
   pip = runif(num_variants, 0, 1),
-  cs_coverage_0.95 = sample(0:2, num_variants, replace = TRUE),
-  cs_coverage_0.7 = sample(0:2, num_variants, replace = TRUE),
-  cs_coverage_0.5 = sample(0:2, num_variants, replace = TRUE)
+  CS_95_susie = sample(0:2, num_variants, replace = TRUE),
+  CS_70_susie = sample(0:2, num_variants, replace = TRUE),
+  CS_50_susie = sample(0:2, num_variants, replace = TRUE)
 )
 susie_result_mock <- list(
   susie_results = list(
@@ -156,7 +156,7 @@ test_that("mr_format functions with normal parameters", {
   input_data <- generate_format_mock_data()
 
   condition <- "condition1"
-  coverage <- "cs_coverage_0.95"
+  coverage <- "CS_95_susie"
   allele_qc <- TRUE
 
   res <- mr_format(input_data$susie_result, condition, input_data$gwas_sumstats_db, coverage, allele_qc)
@@ -174,7 +174,7 @@ test_that("mr_format returns a dataframe with NAs for zero coverage in top_loci"
   input_data <- generate_format_mock_data()
 
   condition <- "condition1"
-  coverage <- "cs_coverage_0.95"
+  coverage <- "CS_95_susie"
   allele_qc <- TRUE
 
   susie_result_mock <- input_data$susie_result
@@ -190,7 +190,7 @@ test_that("mr_format returns a dataframe with NAs with non-existent top_loci", {
   input_data <- generate_format_mock_data()
 
   condition <- "condition1"
-  coverage <- "cs_coverage_0.95"
+  coverage <- "CS_95_susie"
   allele_qc <- TRUE
 
   susie_result_mock <- input_data$susie_result
@@ -586,7 +586,7 @@ test_that("mr_format returns null df when get_nested_element errors for top_loci
     bad_susie, "condition1",
     data.frame(variant_id = "chr1:1:A:G", pos = 1, z = 1, beta = 0.1, se = 0.05,
                effect_allele_frequency = 0.3, n_case = 500, n_control = 500),
-    coverage = "cs_coverage_0.95"
+    coverage = "CS_95_susie"
   )
   expect_true(is.data.frame(result))
   expect_true(all(is.na(result[, -1])))
@@ -606,7 +606,7 @@ test_that("mr_format returns null df when no positions overlap", {
   )
   result <- mr_format(
     input_data$susie_result, "condition1", input_data$gwas_sumstats_db,
-    coverage = "cs_coverage_0.95", run_allele_qc = TRUE
+    coverage = "CS_95_susie", run_allele_qc = TRUE
   )
   expect_true(is.data.frame(result))
   expect_true(all(is.na(result[, -1])))

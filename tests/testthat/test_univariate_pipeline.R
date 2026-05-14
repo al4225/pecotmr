@@ -42,7 +42,7 @@ make_fake_susie_fit <- function(p) {
 }
 
 # ===========================================================================
-# Helper: build a fake susie_post_processor return value
+# Helper: build a fake protocol-facing post-processing return value
 # ===========================================================================
 make_fake_post_result <- function(p) {
   list(
@@ -60,7 +60,7 @@ make_fake_post_result <- function(p) {
     top_loci = data.frame(
       variant_id = paste0("chr1:1:A:G"),
       betahat = 1.5, sebetahat = 0.3, z = 5.0, maf = 0.25,
-      pip = 0.9, cs_coverage_0.95 = 1,
+      pip = 0.9, CS_95_susie = 1,
       stringsAsFactors = FALSE
     )
   )
@@ -412,7 +412,8 @@ test_that("uap: pip_cutoff_to_skip > 0, signal above threshold => continues anal
       call_count <<- call_count + 1
       if (call_count == 1) list(pip = high_pip) else fake_fit
     },
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- expect_message(
@@ -466,7 +467,8 @@ test_that("uap: LD reference filtering subsets X columns and maf", {
       captured_args$ncol_X <<- ncol(X)
       fake_fit
     },
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- univariate_analysis_pipeline(
@@ -490,10 +492,11 @@ test_that("uap: LD reference filtering also subsets X_scalar vector", {
       list(data = variant_ids[1:5], idx = 1:5)
     },
     susie = function(...) fake_fit,
-    susie_post_processor = function(susie_output, data_x, data_y, X_scalar, ...) {
+    postprocess_finemapping_fits = function(fits, data_x, data_y, X_scalar, ...) {
       captured_maf <<- length(data_x[1,])
       fake_post
     },
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- univariate_analysis_pipeline(
@@ -521,7 +524,8 @@ test_that("uap: filter_X is invoked when imiss_cutoff is set", {
       X  # return unchanged
     },
     susie = function(...) fake_fit,
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- univariate_analysis_pipeline(
@@ -547,7 +551,8 @@ test_that("uap: filter_X with maf_cutoff active properly subsets maf and X_scala
       captured_ncol <<- ncol(X)
       fake_fit
     },
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- univariate_analysis_pipeline(
@@ -575,7 +580,8 @@ test_that("uap: susie called with correct args and result stored", {
       captured_L_greedy <<- L_greedy
       fake_fit
     },
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- univariate_analysis_pipeline(
@@ -587,7 +593,7 @@ test_that("uap: susie called with correct args and result stored", {
   expect_identical(result$susie_fitted, fake_fit)
 })
 
-test_that("uap: susie_post_processor output is merged into result", {
+test_that("uap: post-processing output is merged into result", {
   inp <- make_uap_inputs()
   fake_fit <- make_fake_susie_fit(inp$p)
   fake_post <- list(
@@ -598,7 +604,8 @@ test_that("uap: susie_post_processor output is merged into result", {
 
   local_mocked_bindings(
     susie = function(...) fake_fit,
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- univariate_analysis_pipeline(
@@ -622,7 +629,8 @@ test_that("uap: finemapping_extra_opts are forwarded to susie", {
       captured_refine <<- args$refine
       fake_fit
     },
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- univariate_analysis_pipeline(
@@ -646,7 +654,8 @@ test_that("uap: twas_weights = TRUE calls twas_weights_pipeline", {
   twas_called <- FALSE
   local_mocked_bindings(
     susie = function(...) fake_fit,
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
     twas_weights_pipeline = function(...) {
       twas_called <<- TRUE
       fake_twas
@@ -670,7 +679,8 @@ test_that("uap: twas_weights copies top_loci into susie_weights_intermediate", {
 
   local_mocked_bindings(
     susie = function(...) fake_fit,
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
     twas_weights_pipeline = function(...) fake_twas,
   )
 
@@ -693,7 +703,8 @@ test_that("uap: twas_weights_pipeline receives correct cv_folds and sample_parti
   captured_partition <- NULL
   local_mocked_bindings(
     susie = function(...) fake_fit,
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
     twas_weights_pipeline = function(X, Y, susie_fit, cv_folds, max_cv_variants,
                                      cv_threads, sample_partition) {
       captured_cv_folds <<- cv_folds
@@ -720,7 +731,8 @@ test_that("uap: twas_weights = FALSE skips twas_weights_pipeline", {
   twas_called <- FALSE
   local_mocked_bindings(
     susie = function(...) fake_fit,
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
     twas_weights_pipeline = function(...) {
       twas_called <<- TRUE
       make_fake_twas_result(inp$p)
@@ -739,7 +751,7 @@ test_that("uap: twas_weights = FALSE skips twas_weights_pipeline", {
 #  SECTION 6: univariate_analysis_pipeline – coverage vector forwarding
 # ========================================================================
 
-test_that("uap: coverage vector is forwarded correctly to susie and susie_post_processor", {
+test_that("uap: coverage vector is forwarded correctly to susie and post-processing", {
   inp <- make_uap_inputs()
   fake_fit <- make_fake_susie_fit(inp$p)
   fake_post <- make_fake_post_result(inp$p)
@@ -751,11 +763,12 @@ test_that("uap: coverage vector is forwarded correctly to susie and susie_post_p
       captured_coverage_wrapper <<- coverage
       fake_fit
     },
-    susie_post_processor = function(susie_output, data_x, data_y, X_scalar, Y_scalar, maf,
-                                    secondary_coverage, ...) {
+    postprocess_finemapping_fits = function(fits, data_x, data_y, X_scalar, y_scalar, maf,
+                                            secondary_coverage, ...) {
       captured_secondary_cov <<- secondary_coverage
       fake_post
     },
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- univariate_analysis_pipeline(
@@ -775,11 +788,12 @@ test_that("uap: single coverage value => secondary_coverage is NULL", {
   captured_secondary_cov <- "NOT_SET"
   local_mocked_bindings(
     susie = function(...) fake_fit,
-    susie_post_processor = function(susie_output, data_x, data_y, X_scalar, Y_scalar, maf,
-                                    secondary_coverage, ...) {
+    postprocess_finemapping_fits = function(fits, data_x, data_y, X_scalar, y_scalar, maf,
+                                            secondary_coverage, ...) {
       captured_secondary_cov <<- secondary_coverage
       fake_post
     },
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- univariate_analysis_pipeline(
@@ -814,7 +828,8 @@ test_that("uap: both LD filtering and filter_X applied in sequence", {
       captured_ncol <<- ncol(X)
       fake_fit
     },
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- univariate_analysis_pipeline(
@@ -1594,7 +1609,8 @@ test_that("uap: both imiss_cutoff and maf_cutoff NULL skips filter_X", {
       inp$X
     },
     susie = function(...) fake_fit,
-    susie_post_processor = function(...) fake_post,
+    postprocess_finemapping_fits = function(...) fake_post,
+    format_finemapping_output = function(post, primary_method) post,
   )
 
   result <- univariate_analysis_pipeline(

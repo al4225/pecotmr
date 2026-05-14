@@ -1292,11 +1292,27 @@ load_regional_multivariate_data <- function(matrix_y_min_complete = NULL, # when
 #'
 #' This function loads precomputed regional functional association data.
 #'
+#' @param min_markers Minimum number of phenotype markers required for a study.
+#'   If \code{NULL}, no marker-count filtering is applied.
 #' @return A list
 #' @export
-load_regional_functional_data <- function(...) {
+load_regional_functional_data <- function(..., min_markers = NULL) {
   dat <- load_regional_association_data(...)
-  return(dat)
+  if (!is.null(min_markers)) {
+    dat <- .filter_functional_data_by_marker_count(dat, min_markers)
+  }
+  dat
+}
+
+.filter_functional_data_by_marker_count <- function(fdat, min_markers,
+                                                    always_keep = c("dropped_sample", "dropped_samples", "X", "chrom", "grange")) {
+  if (is.null(fdat$Y_coordinates)) return(fdat)
+  keep <- vapply(fdat$Y_coordinates, function(x) nrow(x) >= min_markers, logical(1))
+  filter_names <- setdiff(names(fdat), always_keep)
+  fdat[filter_names] <- lapply(fdat[filter_names], function(x) {
+    if (length(x) == length(keep)) x[keep] else x
+  })
+  fdat
 }
 
 

@@ -448,7 +448,8 @@ test_that("initialize_mvsusie_prior runs with provided data_driven_prior_matrice
       list(V = diag(ncol(Y)), w0 = fake_w0,
            w1 = matrix(0.1, nrow = ncol(X), ncol = 1))
     },
-    susie_post_processor = function(...) list(),
+    postprocess_finemapping_fits = function(...) list(),
+    format_finemapping_output = function(post, primary_method) list(),
   )
   # Mock mvsusieR::mvsusie + create_mixture_prior to avoid heavy fits
   captured_mvsusie_args <- NULL
@@ -478,7 +479,7 @@ test_that("initialize_mvsusie_prior runs with provided data_driven_prior_matrice
   expect_equal(captured_mvsusie_args$L_greedy, 3)
 })
 
-test_that("pipeline propagates outcome_names from mvsusie through susie_post_processor", {
+test_that("pipeline propagates outcome_names from mvsusie through post-processing", {
   skip_if(!requireNamespace("mvsusieR", quietly = TRUE),
           "mvsusieR not installed")
   skip_if(!requireNamespace("susieR", quietly = TRUE),

@@ -258,6 +258,10 @@ test_that("susie_rss_pipeline runs with single_effect method", {
   expect_true(is.list(result))
   expect_true("variant_names" %in% names(result))
   expect_true("susie_result_trimmed" %in% names(result))
+  if (!is.null(result$top_loci)) {
+    expect_true("pip_single_effect" %in% names(result$top_loci))
+    expect_true("CS_95_single_effect" %in% names(result$top_loci))
+  }
   # PIPs should be numeric, in [0,1], and sum to at most 1 (L=1)
   pip <- result$susie_result_trimmed$pip
   expect_true(is.numeric(pip))
@@ -289,6 +293,10 @@ test_that("susie_rss_pipeline runs with bayesian_conditional_regression", {
   )
   expect_true(is.list(result))
   expect_true("susie_result_trimmed" %in% names(result))
+  if (!is.null(result$top_loci)) {
+    expect_true("pip_bayesian_conditional_regression" %in% names(result$top_loci))
+    expect_true("CS_95_bayesian_conditional_regression" %in% names(result$top_loci))
+  }
   pip <- result$susie_result_trimmed$pip
   expect_true(is.numeric(pip))
   expect_length(pip, n)
@@ -452,10 +460,10 @@ adjust_vids <- function(positions = 1:6) {
 }
 
 # =============================================================================
-# susie_post_processor: analysis_script and fSuSiE V=NULL branches (Tier 1)
+# postprocess_finemapping_fits: analysis_script and V=NULL branches (Tier 1)
 # =============================================================================
 
-# Helper: build a minimal synthetic susie_output for susie_post_processor
+# Helper: build a minimal synthetic SuSiE-family output for post-processing
 make_fake_susie_output <- function(p = 5, L = 3, has_V = TRUE) {
   vnames <- paste0("chr1:", 1:p, ":A:G")
   out <- list(
@@ -474,7 +482,7 @@ make_fake_susie_output <- function(p = 5, L = 3, has_V = TRUE) {
   out
 }
 
-test_that("susie_post_processor stores analysis_script when load_script returns non-empty", {
+test_that("postprocess_finemapping_fits stores analysis_script when load_script returns non-empty", {
   skip_if_not_installed("susieR")
   p <- 5
   fake_output <- make_fake_susie_output(p)
@@ -483,28 +491,30 @@ test_that("susie_post_processor stores analysis_script when load_script returns 
   local_mocked_bindings(
     load_script = function() "fake_script_content"
   )
-  result <- susie_post_processor(
-    fake_output,
+  post <- postprocess_finemapping_fits(
+    fits = list(susie_rss = tag_finemapping_fit(fake_output, "susie_rss")),
     data_x = R,
     data_y = list(z = rnorm(p)),
-    mode = "susie_rss"
+    coverage = 0.95
   )
+  result <- format_finemapping_output(post, primary_method = "susie_rss")
   expect_equal(result$analysis_script, "fake_script_content")
 })
 
-test_that("susie_post_processor keeps all effects when V is NULL (fSuSiE)", {
+test_that("postprocess_finemapping_fits keeps all effects when V is NULL", {
   skip_if_not_installed("susieR")
   p <- 5
   L <- 3
   fake_output <- make_fake_susie_output(p, L = L, has_V = FALSE)
   R <- diag(p)
   colnames(R) <- rownames(R) <- names(fake_output$pip)
-  result <- susie_post_processor(
-    fake_output,
+  post <- postprocess_finemapping_fits(
+    fits = list(susie_rss = tag_finemapping_fit(fake_output, "susie_rss")),
     data_x = R,
     data_y = list(z = rnorm(p)),
-    mode = "susie_rss"
+    coverage = 0.95
   )
+  result <- format_finemapping_output(post, primary_method = "susie_rss")
   # With V=NULL, eff_idx = 1:L, so trimmed alpha should keep all L rows
   expect_equal(nrow(result$susie_result_trimmed$alpha), L)
   # V should be NULL in trimmed output
@@ -512,10 +522,10 @@ test_that("susie_post_processor keeps all effects when V is NULL (fSuSiE)", {
 })
 
 # =============================================================================
-# susie_post_processor: mvsusie mode (outcome_names, coef, clfsr)
+# postprocess_finemapping_fits: mvsusie output (outcome_names, coef, clfsr)
 # =============================================================================
 
-test_that("susie_post_processor stores outcome_names, coef, and clfsr in mvsusie mode", {
+test_that("postprocess_finemapping_fits stores outcome_names, coef, and clfsr for mvsusie", {
   skip_if_not_installed("susieR")
   skip_if_not_installed("mvsusieR")
   p <- 5
@@ -545,18 +555,19 @@ test_that("susie_post_processor stores outcome_names, coef, and clfsr in mvsusie
     .package = "mvsusieR"
   )
 
-  result <- susie_post_processor(
-    fake_output,
+  post <- postprocess_finemapping_fits(
+    fits = list(mvsusie = tag_finemapping_fit(fake_output, "mvsusie")),
     data_x = X,
     data_y = NULL,
     X_scalar = 1, y_scalar = 1,
-    mode = "mvsusie"
+    coverage = 0.95
   )
+  result <- format_finemapping_output(post, primary_method = "mvsusie")
 
   # outcome_names should be stored as context_names
   expect_equal(result$context_names, cnames)
   # coef should come from mvsusieR::coef.mvsusie
-  expect_equal(result$susie_result_trimmed$coef, fake_coef)
+  expect_equal(result$susie_result_trimmed$coef, fake_coef[-1, , drop = FALSE])
   # conditional_lfsr should be trimmed to eff_idx
   expect_equal(dim(result$susie_result_trimmed$clfsr), c(L, p, R))
 })
@@ -589,10 +600,11 @@ test_that("susie_rss_pipeline X-mode passes X to susie_rss and computes LD from 
         niter = 10
       )
     },
-    susie_post_processor = function(susie_output, data_x, ...) {
+    postprocess_finemapping_fits = function(fits, data_x, ...) {
       captured_pp_data_x <<- data_x
-      list(variant_names = vnames)
-    }
+      list()
+    },
+    format_finemapping_output = function(post, primary_method) list(variant_names = vnames)
   )
   result <- susie_rss_pipeline(list(z = z), X_mat = X, R_mismatch = "eb")
   expect_true("X" %in% names(captured_susie_args))
@@ -631,10 +643,11 @@ test_that("susie_rss_pipeline computes LD from first panel when X_mat is a list"
         niter = 10
       )
     },
-    susie_post_processor = function(susie_output, data_x, ...) {
+    postprocess_finemapping_fits = function(fits, data_x, ...) {
       captured_pp_data_x <<- data_x
-      list(variant_names = vnames)
-    }
+      list()
+    },
+    format_finemapping_output = function(post, primary_method) list(variant_names = vnames)
   )
   result <- susie_rss_pipeline(list(z = z), X_mat = X_list)
   # data_x should be a p x p correlation matrix computed from X1 (first panel)
@@ -729,4 +742,24 @@ test_that("adjust_susie_weights run_allele_qc=TRUE auto-prepends chrom/pos/A2/A1
     match_min_prop = 0.1
   )
   expect_true(length(out$adjusted_susie_weights) > 0)
+})
+
+test_that("format_finemapping_output stores top loci variants", {
+  top_loci <- data.frame(
+    variant_id = paste0("v", 1:4),
+    CS_95_susie = c(0L, 1L, NA_integer_, 0L),
+    pip_susie = c(0.2, 0.005, 0.001, 0),
+    stringsAsFactors = FALSE
+  )
+  post <- list(
+    finemapping_results = list(susie = list(
+      variant_names = paste0("v", 1:4),
+      result_trimmed = list(pip = 1:4),
+      top_loci_long = NULL
+    )),
+    top_loci_long = NULL,
+    top_loci = top_loci
+  )
+  out <- format_finemapping_output(post, "susie")
+  expect_equal(out$top_loci_variants, paste0("v", 1:4))
 })

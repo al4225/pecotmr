@@ -61,7 +61,7 @@ multivariate_analysis_pipeline(
 
 \item{mvsusie_max_iter}{The maximum number of iterations for mvSuSiE. Default is 200.}
 
-\item{signal_cutoff}{Cutoff value for signal identification in PIP values for susie_post_processor. Default is 0.025.}
+\item{signal_cutoff}{Cutoff value for signal identification in PIP values. Default is 0.025.}
 
 \item{coverage}{A vector of coverage probabilities, with the first element being the primary coverage and the rest being secondary coverage probabilities for credible set refinement. Defaults to c(0.95, 0.7, 0.5).}
 

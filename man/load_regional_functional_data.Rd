@@ -4,7 +4,11 @@
 \alias{load_regional_functional_data}
 \title{Load Regional Functional Association Data}
 \usage{
-load_regional_functional_data(...)
+load_regional_functional_data(..., min_markers = NULL)
+}
+\arguments{
+\item{min_markers}{Minimum number of phenotype markers required for a study.
+If \code{NULL}, no marker-count filtering is applied.}
 }
 \value{
 A list
