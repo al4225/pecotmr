@@ -23,6 +23,7 @@ rss_analysis_pipeline(
   impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
   pip_cutoff_to_skip = 0,
   R_finite = NULL,
+  R_mismatch = NULL,
   keep_indel = TRUE,
   comment_string = "#",
   diagnostics = FALSE
@@ -67,6 +68,9 @@ signal_cutoff, min_abs_corr).}
 
 \item{R_finite}{Controls variance inflation to account for finite reference LD.
 Passed to \code{susieR::susie_rss()}.}
+
+\item{R_mismatch}{LD mismatch correction method passed to \code{susieR::susie_rss()}.
+Default NULL disables mismatch correction.}
 
 \item{keep_indel}{Whether to keep indel variants (default TRUE).}
 

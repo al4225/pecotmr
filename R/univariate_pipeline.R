@@ -190,6 +190,8 @@ load_study_LD <- function(ld_path, region) {
 #' @param pip_cutoff_to_skip PIP threshold for early stopping (default 0, no skip).
 #' @param R_finite Controls variance inflation to account for finite reference LD.
 #'   Passed to \code{susieR::susie_rss()}.
+#' @param R_mismatch LD mismatch correction method passed to \code{susieR::susie_rss()}.
+#'   Default NULL disables mismatch correction.
 #' @param keep_indel Whether to keep indel variants (default TRUE).
 #' @param comment_string Comment character for sumstat file (default "#").
 #' @param diagnostics Whether to include diagnostic info (default FALSE).
@@ -210,7 +212,7 @@ rss_analysis_pipeline <- function(
       min_abs_corr = 0.8
     ),
     impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
-    pip_cutoff_to_skip = 0, R_finite = NULL,
+    pip_cutoff_to_skip = 0, R_finite = NULL, R_mismatch = NULL,
     keep_indel = TRUE, comment_string = "#", diagnostics = FALSE) {
   # Detect genotype input: single X matrix or list of X matrices (mixture panel).
   # susie_rss accepts X=list(X1, X2, ...) for multi-panel mixture.
@@ -253,7 +255,8 @@ rss_analysis_pipeline <- function(
   # PIP screening (always uses R)
   if (pip_cutoff_to_skip != 0) {
     if (pip_cutoff_to_skip < 0) pip_cutoff_to_skip <- 3 / nrow(sumstats)
-    top_model_pip <- susie_rss(z = sumstats$z, R = LD_mat, L = 1, L_greedy = NULL, max_iter = 1, n = n, var_y = var_y)$pip
+    top_model_pip <- susie_rss(z = sumstats$z, R = LD_mat, L = 1, L_greedy = NULL, max_iter = 1,
+      n = n, var_y = var_y, R_finite = R_finite, R_mismatch = R_mismatch)$pip
     if (!any(top_model_pip > pip_cutoff_to_skip)) {
       message("Skipping follow-up analysis: No signals above PIP threshold ", pip_cutoff_to_skip)
       return(list(rss_data_analyzed = sumstats))
@@ -305,7 +308,8 @@ rss_analysis_pipeline <- function(
       secondary_coverage = sec_coverage,
       signal_cutoff = finemapping_opts$signal_cutoff,
       min_abs_corr = finemapping_opts$min_abs_corr,
-      R_finite = R_finite
+      R_finite = R_finite,
+      R_mismatch = R_mismatch
     )
     if (!is.null(qc_method)) {
       res$outlier_number <- qc_results$outlier_number
@@ -330,7 +334,9 @@ rss_analysis_pipeline <- function(
       coverage = pri_coverage,
       secondary_coverage = sec_coverage,
       signal_cutoff = finemapping_opts$signal_cutoff,
-      min_abs_corr = finemapping_opts$min_abs_corr
+      min_abs_corr = finemapping_opts$min_abs_corr,
+      R_finite = R_finite,
+      R_mismatch = R_mismatch
     )
   }
 

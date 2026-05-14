@@ -1510,6 +1510,7 @@ test_that("rss: finemapping_opts are forwarded to susie_rss_pipeline", {
   captured_L_greedy <- NULL
   captured_coverage <- NULL
   captured_signal_cutoff <- NULL
+  captured_R_mismatch <- NULL
   local_mocked_bindings(
     load_rss_data = function(...) list(sumstats = ss, n = 1000, var_y = 1),
     rss_basic_qc = function(...) list(sumstats = ss, LD_mat = ld_mat),
@@ -1520,6 +1521,7 @@ test_that("rss: finemapping_opts are forwarded to susie_rss_pipeline", {
       captured_L_greedy <<- L_greedy
       captured_coverage <<- coverage
       captured_signal_cutoff <<- signal_cutoff
+      captured_R_mismatch <<- list(...)$R_mismatch
       make_fake_post_result(5)
     },
   )
@@ -1535,13 +1537,15 @@ test_that("rss: finemapping_opts are forwarded to susie_rss_pipeline", {
       L = 10, L_greedy = 3,
       coverage = c(0.90, 0.6), signal_cutoff = 0.05,
       min_abs_corr = 0.7
-    )
+    ),
+    R_mismatch = "eb"
   )
 
   expect_equal(captured_L, 10)
   expect_equal(captured_L_greedy, 3)
   expect_equal(captured_coverage, 0.90)
   expect_equal(captured_signal_cutoff, 0.05)
+  expect_equal(captured_R_mismatch, "eb")
 })
 
 # ========================================================================
