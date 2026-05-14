@@ -9,9 +9,8 @@ susie_rss_pipeline(
   LD_mat = NULL,
   X_mat = NULL,
   n = NULL,
-  L = 5,
-  max_L = 30,
-  l_step = 5,
+  L = 30,
+  L_greedy = 5,
   analysis_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
   coverage = 0.95,
   secondary_coverage = c(0.7, 0.5),
@@ -30,11 +29,9 @@ susie_rss_pipeline(
 
 \item{n}{Sample size.}
 
-\item{L}{Initial number of causal configurations (default: 5).}
+\item{L}{Maximum number of causal configurations (default: 30).}
 
-\item{max_L}{Maximum number of causal configurations (default: 30).}
-
-\item{l_step}{Step size for dynamic L adjustment (default: 5).}
+\item{L_greedy}{Initial greedy number of causal configurations (default: 5).}
 
 \item{analysis_method}{One of "susie_rss", "single_effect", "bayesian_conditional_regression".}
 

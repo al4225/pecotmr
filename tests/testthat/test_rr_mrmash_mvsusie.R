@@ -46,21 +46,27 @@ test_that("mvsusie_weights fits model and returns coefficients when fit is NULL"
   X <- matrix(rnorm(n * p), n, p)
   Y <- matrix(rnorm(n * R), n, R)
   fake_coef <- matrix(rnorm((p + 1) * R), nrow = p + 1, ncol = R)
+  captured <- list()
 
   local_mocked_bindings(
     create_mixture_prior = function(...) list(),
-    mvsusie = function(...) "mock_fit",
+    mvsusie = function(...) {
+      captured <<- list(...)
+      "mock_fit"
+    },
     coef.mvsusie = function(...) fake_coef,
     .package = "mvsusieR"
   )
 
   result <- expect_message(
-    mvsusie_weights(X = X, Y = Y),
+    mvsusie_weights(X = X, Y = Y, L = 12, L_greedy = 4),
     "mvsusie_fit is not provided"
   )
   # Should return coef without intercept row
   expect_equal(dim(result), c(p, R))
   expect_equal(result, fake_coef[-1, ])
+  expect_equal(captured$L, 12)
+  expect_equal(captured$L_greedy, 4)
 })
 
 test_that("mvsusie_weights returns coefficients from provided fit", {

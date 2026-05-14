@@ -7,7 +7,8 @@
 #' @param X A matrix of genotype data where rows represent samples and columns represent genetic variants.
 #' @param Y A matrix of phenotype measurements, representing samples and columns represent conditions.
 #' @param maf A list of vectors for minor allele frequencies for each variant in X.
-#' @param max_L The maximum number of components in mvSuSiE. Default is 30.
+#' @param L Maximum number of components in mvSuSiE. Default is 30.
+#' @param L_greedy Initial greedy number of components in mvSuSiE. Default is 5.
 #' @param ld_reference_meta_file An optional path to a file containing linkage disequilibrium reference data. If provided, variants in X are filtered based on this reference.
 #' @param pip_cutoff_to_skip Cutoff value for skipping conditions based on PIP values. Default is 0.
 #' @param signal_cutoff Cutoff value for signal identification in PIP values for susie_post_processor. Default is 0.025.
@@ -48,7 +49,8 @@
 #'   Y = multitrait_data$Y,
 #'   maf = colMeans(multitrait_data$X),
 #'   X_variance = multitrait_data$X_variance,
-#'   max_L = 10,
+#'   L = 10,
+#'   L_greedy = 5,
 #'   ld_reference_meta_file = NULL,
 #'   max_cv_variants = -1,
 #'   pip_cutoff_to_skip = 0,
@@ -76,7 +78,8 @@ multivariate_analysis_pipeline <- function(
     ld_reference_meta_file = NULL,
     pip_cutoff_to_skip = 0,
     # methods parameter configuration
-    max_L = -1,
+    L = 30,
+    L_greedy = 5,
     data_driven_prior_matrices = NULL,
     data_driven_prior_matrices_cv = NULL,
     data_driven_prior_weights_cutoff = 1e-4,
@@ -198,6 +201,9 @@ multivariate_analysis_pipeline <- function(
   if (nrow(X) != nrow(Y)) stop("X and Y must have the same number of rows")
   if (!is.numeric(maf) || length(maf) != ncol(X)) stop("maf must be a numeric vector with length equal to the number of columns in X")
   if (any(maf < 0 | maf > 1)) stop("maf values must be between 0 and 1")
+  if (!is.numeric(L) || L <= 0) stop("L must be a positive integer")
+  if (!is.null(L_greedy) && (!is.numeric(L_greedy) || L_greedy <= 0)) stop("L_greedy must be NULL or a positive integer")
+  if (!is.null(L_greedy)) L_greedy <- min(L_greedy, L)
 
   # main analysis codes
   Y <- skip_conditions(X, Y, pip_cutoff_to_skip)
@@ -268,13 +274,6 @@ multivariate_analysis_pipeline <- function(
     names(data_driven_prior_matrices_cv) <- paste0("fold_", 1:cv_folds)
   }
 
-  if (max_L < 0) {
-    # This is based on mr.mash fit
-    # which can be a huge overestimate
-    # so we bound it between 5 and 20
-    max_L <- min(20, max(5, sum(1 - res$mrmash_fitted$w1[, 1])))
-  }
-
   mvsusie_reweighted_mixture_prior <- initialize_mvsusie_prior(
     colnames(Y), data_driven_prior_matrices,
     data_driven_prior_matrices_cv, cv_folds, w0_updated, data_driven_prior_weights_cutoff
@@ -285,7 +284,8 @@ multivariate_analysis_pipeline <- function(
   # Fit mvSuSiE
   message("Fitting mvSuSiE model on input data ...")
   res$mvsusie_fitted <- mvsusieR::mvsusie(X, Y,
-    L = max_L, prior_variance = mvsusie_reweighted_mixture_prior$data_driven_prior_matrices,
+    L = L, L_greedy = L_greedy,
+    prior_variance = mvsusie_reweighted_mixture_prior$data_driven_prior_matrices,
     residual_variance = resid_Y, estimate_residual_variance = TRUE,
     max_iter = mvsusie_max_iter,
     verbose = verbose, coverage = coverage[1]
@@ -309,6 +309,7 @@ multivariate_analysis_pipeline <- function(
       mvsusie_max_iter = mvsusie_max_iter, mrmash_max_iter = mrmash_max_iter,
       canonical_prior_matrices = canonical_prior_matrices, data_driven_prior_matrices = data_driven_prior_matrices,
       data_driven_prior_matrices_cv = data_driven_prior_matrices_cv,
+      L = L, L_greedy = L_greedy,
       cv_threads = cv_threads, verbose = verbose
     )
   }

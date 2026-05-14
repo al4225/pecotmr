@@ -264,7 +264,7 @@ test_that("lasso_weights and enet_weights dispatch to glmnet_weights with correc
   }
 })
 
-test_that("susie_weights actually calls susie_wrapper when fit is NULL", {
+test_that("susie_weights actually calls susie when fit is NULL", {
   set.seed(42)
   p <- 5
   X <- matrix(rnorm(10 * p), nrow = 10)
@@ -272,7 +272,7 @@ test_that("susie_weights actually calls susie_wrapper when fit is NULL", {
   captured <- new.env(parent = emptyenv())
   captured$called <- FALSE
   local_mocked_bindings(
-    susie_wrapper = function(X, y, ...) {
+    susie = function(X, y, ...) {
       captured$called <- TRUE
       captured$X <- X
       captured$y <- y
@@ -285,7 +285,7 @@ test_that("susie_weights actually calls susie_wrapper when fit is NULL", {
   expect_identical(captured$y, y)
 })
 
-test_that("susie_ash_weights calls susie_wrapper with ash dispatch arguments", {
+test_that("susie_ash_weights calls susie with ash dispatch arguments", {
   set.seed(42)
   p <- 5
   X <- matrix(rnorm(10 * p), nrow = 10)
@@ -293,7 +293,7 @@ test_that("susie_ash_weights calls susie_wrapper with ash dispatch arguments", {
   captured <- new.env(parent = emptyenv())
   captured$called <- FALSE
   local_mocked_bindings(
-    susie_wrapper = function(X, y, unmappable_effects = NULL, convergence_method = NULL, ...) {
+    susie = function(X, y, unmappable_effects = NULL, convergence_method = NULL, ...) {
       captured$called <- TRUE
       captured$unmappable_effects <- unmappable_effects
       captured$convergence_method <- convergence_method
@@ -306,7 +306,7 @@ test_that("susie_ash_weights calls susie_wrapper with ash dispatch arguments", {
   expect_equal(captured$convergence_method, "pip")
 })
 
-test_that("susie_inf_weights calls susie_wrapper with inf dispatch arguments", {
+test_that("susie_inf_weights calls susie with inf dispatch arguments", {
   set.seed(42)
   p <- 5
   X <- matrix(rnorm(10 * p), nrow = 10)
@@ -314,7 +314,7 @@ test_that("susie_inf_weights calls susie_wrapper with inf dispatch arguments", {
   captured <- new.env(parent = emptyenv())
   captured$called <- FALSE
   local_mocked_bindings(
-    susie_wrapper = function(X, y, unmappable_effects = NULL, convergence_method = NULL, ...) {
+    susie = function(X, y, unmappable_effects = NULL, convergence_method = NULL, ...) {
       captured$called <- TRUE
       captured$unmappable_effects <- unmappable_effects
       captured$convergence_method <- convergence_method

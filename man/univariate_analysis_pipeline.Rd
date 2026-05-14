@@ -17,9 +17,8 @@ univariate_analysis_pipeline(
   xvar_cutoff = 0,
   ld_reference_meta_file = NULL,
   pip_cutoff_to_skip = 0,
-  init_L = 5,
-  max_L = 20,
-  l_step = 5,
+  L = 20,
+  L_greedy = 5,
   signal_cutoff = 0.025,
   coverage = c(0.95, 0.7, 0.5),
   min_abs_corr = 0.8,
@@ -57,11 +56,9 @@ univariate_analysis_pipeline(
 
 \item{pip_cutoff_to_skip}{Cutoff value for skipping analysis based on PIP values. Default is 0.}
 
-\item{init_L}{Initial number of components for SuSiE model optimization. Default is 5.}
+\item{L}{Maximum number of components in SuSiE. Default is 20.}
 
-\item{max_L}{The maximum number of components in SuSiE. Default is 20.}
-
-\item{l_step}{Step size for increasing the number of components during SuSiE optimization. Default is 5.}
+\item{L_greedy}{Initial greedy number of components in SuSiE. Default is 5.}
 
 \item{signal_cutoff}{Cutoff value for signal identification in PIP values. Default is 0.025.}
 

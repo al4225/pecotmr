@@ -5,7 +5,7 @@
 # @noRd
 .twas_method_lookup <- function(methods) {
   method_map <- list(
-    susie = list(fn = "susie_weights", args = list(refine = FALSE, init_L = 5, max_L = 20)),
+    susie = list(fn = "susie_weights", args = list(refine = FALSE, L = 20, L_greedy = 5)),
     susie_ash = list(fn = "susie_ash_weights", args = list()),
     susie_inf = list(fn = "susie_inf_weights", args = list()),
     mrash = list(fn = "mrash_weights", args = list(init_prior_sd = TRUE, max.iter = 100)),
@@ -24,7 +24,7 @@
     scad = list(fn = "scad_weights", args = list()),
     mcp = list(fn = "mcp_weights", args = list()),
     l0learn = list(fn = "l0learn_weights", args = list()),
-    mvsusie = list(fn = "mvsusie_weights", args = list()),
+    mvsusie = list(fn = "mvsusie_weights", args = list(L = 30, L_greedy = 5)),
     mrmash = list(fn = "mrmash_weights", args = list())
   )
 
@@ -674,8 +674,8 @@ twas_weights_pipeline <- function(X,
     # 2. at most 100 iterations for mr.ash allowed
     # 3. only use a subset of variants randomly selected to avoid bias
     if (!is.null(susie_fit) && !is.null(weight_methods$susie_weights)) {
-      max_L <- length(susie_fit$V)
-      weight_methods$susie_weights <- list(refine = FALSE, init_L = max_L, max_L = max_L)
+      L <- length(susie_fit$V)
+      weight_methods$susie_weights <- list(refine = FALSE, L = L, L_greedy = NULL)
     }
     if (is.null(cv_weight_methods)) {
       cv_weight_methods <- names(.filter_zero_weight_methods(weight_methods, res$twas_weights))
@@ -774,6 +774,9 @@ twas_weights_pipeline <- function(X,
 #' @param X A matrix of genotype data where rows represent samples and columns represent genetic variants.
 #' @param Y A matrix of phenotype measurements, where rows represent samples and columns represent conditions.
 #' @param mnm_fit An object containing the fitted multivariate models (e.g., mvSuSiE and mr.mash fits).
+#' @param L Maximum number of components in mvSuSiE. If NULL, the number of
+#'   components in the fitted mvSuSiE object is used.
+#' @param L_greedy Initial greedy number of components in mvSuSiE. Defaults to 5.
 #' @param cv_folds The number of folds to use for cross-validation. Defaults to 5. Set to 0 to skip cross-validation.
 #' @param sample_partition An optional vector specifying the partition of samples for cross-validation. If NULL, a random partition is generated.
 #' @param data_driven_prior_matrices A list of data-driven covariance matrices for mr.mash weights. Defaults to NULL.
@@ -794,6 +797,8 @@ twas_multivariate_weights_pipeline <- function(
     X,
     Y,
     mnm_fit,
+    L = NULL,
+    L_greedy = 5,
     cv_folds = 5,
     sample_partition = NULL,
     data_driven_prior_matrices = NULL,
@@ -861,9 +866,8 @@ twas_multivariate_weights_pipeline <- function(
 
   # Perform cross-validation if specified
   if (cv_folds > 1) {
-    # max_L <- length(which(mnm_fit$mvsusie_fitted$V > 1E-9)) + 2
-    # To be fair in comparion with other methods mvSuSiE should have the same input max_L as when the weights were originally computed
-    max_L <- length(mnm_fit$mvsusie_fitted$V)
+    if (is.null(L)) L <- length(mnm_fit$mvsusie_fitted$V)
+    if (!is.null(L_greedy)) L_greedy <- min(L_greedy, L)
     weight_methods <- list(
       mrmash_weights = list(
         data_driven_prior_matrices = data_driven_prior_matrices,
@@ -874,7 +878,8 @@ twas_multivariate_weights_pipeline <- function(
       mvsusie_weights = list(
         prior_variance = mnm_fit$reweighted_data_driven_prior_matrices,
         residual_variance = mnm_fit$mrmash_fitted$V,
-        L = max_L,
+        L = L,
+        L_greedy = L_greedy,
         max_iter = mvsusie_max_iter,
         verbose = verbose
       )

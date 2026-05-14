@@ -17,8 +17,8 @@ rss_analysis_pipeline(
   region_name_col = NULL,
   qc_method = c("slalom", "dentist"),
   finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
-  finemapping_opts = list(init_L = 5, max_L = 20, l_step = 5, coverage = c(0.95, 0.7,
-    0.5), signal_cutoff = 0.025, min_abs_corr = 0.8),
+  finemapping_opts = list(L = 20, L_greedy = 5, coverage = c(0.95, 0.7, 0.5),
+    signal_cutoff = 0.025, min_abs_corr = 0.8),
   impute = TRUE,
   impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
   pip_cutoff_to_skip = 0,
@@ -56,7 +56,7 @@ uses the z+X interface. R is computed internally for QC/imputation.}
 
 \item{finemapping_method}{One of "susie_rss", "single_effect", "bayesian_conditional_regression".}
 
-\item{finemapping_opts}{List of fine-mapping options (init_L, max_L, l_step, coverage,
+\item{finemapping_opts}{List of fine-mapping options (L, L_greedy, coverage,
 signal_cutoff, min_abs_corr).}
 
 \item{impute}{Whether to impute missing variants via RAISS (default TRUE).}

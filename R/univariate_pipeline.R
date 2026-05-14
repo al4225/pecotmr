@@ -15,9 +15,8 @@
 #' @param xvar_cutoff Variance cutoff for X. Default is 0.05.
 #' @param ld_reference_meta_file An optional path to a file containing linkage disequilibrium reference data. Default is NULL.
 #' @param pip_cutoff_to_skip Cutoff value for skipping analysis based on PIP values. Default is 0.
-#' @param init_L Initial number of components for SuSiE model optimization. Default is 5.
-#' @param max_L The maximum number of components in SuSiE. Default is 20.
-#' @param l_step Step size for increasing the number of components during SuSiE optimization. Default is 5.
+#' @param L Maximum number of components in SuSiE. Default is 20.
+#' @param L_greedy Initial greedy number of components in SuSiE. Default is 5.
 #' @param signal_cutoff Cutoff value for signal identification in PIP values. Default is 0.025.
 #' @param coverage A vector of coverage probabilities for credible sets. Default is c(0.95, 0.7, 0.5).
 #' @param min_abs_corr Minimum absolute correlation for credible set purity filtering. Default is 0.8,
@@ -48,9 +47,8 @@ univariate_analysis_pipeline <- function(
     ld_reference_meta_file = NULL,
     pip_cutoff_to_skip = 0,
     # methods parameter configuration
-    init_L = 5,
-    max_L = 20,
-    l_step = 5,
+    L = 20,
+    L_greedy = 5,
     # fine-mapping results summary
     signal_cutoff = 0.025,
     coverage = c(0.95, 0.7, 0.5),
@@ -71,9 +69,8 @@ univariate_analysis_pipeline <- function(
   if (any(maf < 0 | maf > 1)) stop("maf values must be between 0 and 1")
   if (!is.numeric(X_scalar) || (length(X_scalar) != 1 && length(X_scalar) != ncol(X))) stop("X_scalar must be a numeric scalar or vector with length equal to the number of columns in X")
   if (!is.numeric(Y_scalar) || length(Y_scalar) != 1) stop("Y_scalar must be a numeric scalar")
-  if (!is.numeric(init_L) || init_L <= 0) stop("init_L must be a positive integer")
-  if (!is.numeric(max_L) || max_L <= 0) stop("max_L must be a positive integer")
-  if (!is.numeric(l_step) || l_step <= 0) stop("l_step must be a positive integer")
+  if (!is.numeric(L) || L <= 0) stop("L must be a positive integer")
+  if (!is.null(L_greedy) && (!is.numeric(L_greedy) || L_greedy <= 0)) stop("L_greedy must be NULL or a positive integer")
 
   # Initial PIP check
   if (pip_cutoff_to_skip != 0) {
@@ -111,11 +108,11 @@ univariate_analysis_pipeline <- function(
   st <- proc.time()
   res <- list()
 
-  # SuSiE analysis with optimization
-  message("Fitting SuSiE model on input data with L optimization...")
-  base_susie_args <- list(X = X, y = Y, init_L = init_L, max_L = max_L, l_step = l_step, coverage = coverage[1])
+  # SuSiE analysis
+  message("Fitting SuSiE model on input data ...")
+  base_susie_args <- list(X = X, y = Y, L = L, L_greedy = L_greedy, coverage = coverage[1])
   susie_args <- modifyList(finemapping_extra_opts, base_susie_args) # modifyList(A, B): B overrides A
-  res$susie_fitted <- do.call(susie_wrapper, susie_args)
+  res$susie_fitted <- do.call(susie, susie_args)
 
   # Process SuSiE results
   susie_result_trimmed <- susie_post_processor(
@@ -186,7 +183,7 @@ load_study_LD <- function(ld_path, region) {
 #' @param region_name_col Column to filter for extract_region_name.
 #' @param qc_method QC method: "slalom" or "dentist".
 #' @param finemapping_method One of "susie_rss", "single_effect", "bayesian_conditional_regression".
-#' @param finemapping_opts List of fine-mapping options (init_L, max_L, l_step, coverage,
+#' @param finemapping_opts List of fine-mapping options (L, L_greedy, coverage,
 #'   signal_cutoff, min_abs_corr).
 #' @param impute Whether to impute missing variants via RAISS (default TRUE).
 #' @param impute_opts List of imputation options (rcond, R2_threshold, minimum_ld, lamb).
@@ -199,6 +196,7 @@ load_study_LD <- function(ld_path, region) {
 #'
 #' @return A list with fine-mapping results and analyzed summary statistics.
 #' @importFrom magrittr %>%
+#' @importFrom susieR susie_rss
 #' @export
 rss_analysis_pipeline <- function(
     sumstat_path, column_file_path, LD_data,
@@ -207,7 +205,7 @@ rss_analysis_pipeline <- function(
     qc_method = c("slalom", "dentist"),
     finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
     finemapping_opts = list(
-      init_L = 5, max_L = 20, l_step = 5,
+      L = 20, L_greedy = 5,
       coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025,
       min_abs_corr = 0.8
     ),
@@ -255,7 +253,7 @@ rss_analysis_pipeline <- function(
   # PIP screening (always uses R)
   if (pip_cutoff_to_skip != 0) {
     if (pip_cutoff_to_skip < 0) pip_cutoff_to_skip <- 3 / nrow(sumstats)
-    top_model_pip <- susie_rss_wrapper(z = sumstats$z, R = LD_mat, L = 1, n = n, var_y = var_y)$pip
+    top_model_pip <- susie_rss(z = sumstats$z, R = LD_mat, L = 1, L_greedy = NULL, max_iter = 1, n = n, var_y = var_y)$pip
     if (!any(top_model_pip > pip_cutoff_to_skip)) {
       message("Skipping follow-up analysis: No signals above PIP threshold ", pip_cutoff_to_skip)
       return(list(rss_data_analyzed = sumstats))
@@ -301,7 +299,7 @@ rss_analysis_pipeline <- function(
       LD_mat = if (use_X) NULL else LD_mat,
       X_mat = X_mat_sub,
       n = n, var_y = var_y,
-      L = finemapping_opts$init_L, max_L = finemapping_opts$max_L, l_step = finemapping_opts$l_step,
+      L = finemapping_opts$L, L_greedy = finemapping_opts$L_greedy,
       analysis_method = finemapping_method,
       coverage = pri_coverage,
       secondary_coverage = sec_coverage,
@@ -327,7 +325,7 @@ rss_analysis_pipeline <- function(
   .run_reanalysis <- function(sumstats, LD_mat, method, finemapping_opts, pri_coverage, sec_coverage) {
     susie_rss_pipeline(sumstats, LD_mat,
       n = n, var_y = var_y,
-      L = finemapping_opts$init_L, max_L = finemapping_opts$max_L, l_step = finemapping_opts$l_step,
+      L = finemapping_opts$L, L_greedy = finemapping_opts$L_greedy,
       analysis_method = method,
       coverage = pri_coverage,
       secondary_coverage = sec_coverage,

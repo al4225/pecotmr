@@ -451,9 +451,12 @@ test_that("initialize_mvsusie_prior runs with provided data_driven_prior_matrice
     susie_post_processor = function(...) list(),
   )
   # Mock mvsusieR::mvsusie + create_mixture_prior to avoid heavy fits
+  captured_mvsusie_args <- NULL
   local_mocked_bindings(
-    mvsusie = function(...) list(pip = rep(0.1, ncol(d$X)),
-                                 sets = list(cs = NULL)),
+    mvsusie = function(...) {
+      captured_mvsusie_args <<- list(...)
+      list(pip = rep(0.1, ncol(d$X)), sets = list(cs = NULL))
+    },
     create_mixture_prior = function(...) list(matrices = prior_U, weights = c(0.5, 0.5)),
     .package = "mvsusieR"
   )
@@ -462,6 +465,8 @@ test_that("initialize_mvsusie_prior runs with provided data_driven_prior_matrice
     X = d$X, Y = d$Y, maf = d$maf,
     pip_cutoff_to_skip = 0,
     data_driven_prior_matrices = prior_mats,
+    L = 9,
+    L_greedy = 3,
     twas_weights = FALSE
   )
   expect_true(is.list(result))
@@ -469,6 +474,8 @@ test_that("initialize_mvsusie_prior runs with provided data_driven_prior_matrice
   expect_true("reweighted_mixture_prior" %in% names(result))
   expect_true("reweighted_mixture_prior_cv" %in% names(result))
   expect_true("mvsusie_fitted" %in% names(result))
+  expect_equal(captured_mvsusie_args$L, 9)
+  expect_equal(captured_mvsusie_args$L_greedy, 3)
 })
 
 test_that("pipeline propagates outcome_names from mvsusie through susie_post_processor", {

@@ -66,8 +66,8 @@ test_that(".twas_method_lookup: unknown method produces error", {
 test_that(".twas_method_lookup: default args are set for susie and mrash", {
   result <- pecotmr:::.twas_method_lookup("fast_default")
   expect_equal(result$susie_weights$refine, FALSE)
-  expect_equal(result$susie_weights$init_L, 5)
-  expect_equal(result$susie_weights$max_L, 20)
+  expect_equal(result$susie_weights$L, 20)
+  expect_equal(result$susie_weights$L_greedy, 5)
   expect_equal(result$mrash_weights$init_prior_sd, TRUE)
   expect_equal(result$mrash_weights$max.iter, 100)
 })

@@ -54,14 +54,14 @@ test_that("susie_weights with alpha/mu/X_column_scale_factors calls coef.susie",
   expect_true(any(result != 0))
 })
 
-test_that("susie_weights calls susie_wrapper when susie_fit is NULL", {
+test_that("susie_weights calls susie when susie_fit is NULL", {
   set.seed(42)
   p <- 5
   n <- 50
   X <- matrix(rnorm(n * p), nrow = n)
   y <- rnorm(n)
   local_mocked_bindings(
-    susie_wrapper = function(...) {
+    susie = function(...) {
       list(pip = rep(0.1, p))
     }
   )
@@ -98,14 +98,14 @@ test_that("susie_ash_weights with proper fields calls coef.susie", {
   expect_true(length(result) >= p)
 })
 
-test_that("susie_ash_weights calls susie_wrapper when fit is NULL", {
+test_that("susie_ash_weights calls susie when fit is NULL", {
   set.seed(42)
   p <- 4
   n <- 30
   X <- matrix(rnorm(n * p), nrow = n)
   y <- rnorm(n)
   local_mocked_bindings(
-    susie_wrapper = function(...) {
+    susie = function(...) {
       list(pip = rep(0.1, p))
     }
   )
@@ -142,14 +142,14 @@ test_that("susie_inf_weights with proper fields calls coef.susie", {
   expect_true(length(result) >= p)
 })
 
-test_that("susie_inf_weights calls susie_wrapper when fit is NULL", {
+test_that("susie_inf_weights calls susie when fit is NULL", {
   set.seed(42)
   p <- 4
   n <- 30
   X <- matrix(rnorm(n * p), nrow = n)
   y <- rnorm(n)
   local_mocked_bindings(
-    susie_wrapper = function(...) {
+    susie = function(...) {
       list(pip = rep(0.1, p))
     }
   )

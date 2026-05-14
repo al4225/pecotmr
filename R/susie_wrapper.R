@@ -114,88 +114,6 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, run_allele
   return(list(adjusted_susie_weights = adjusted_xqtl_coef, remained_variants_ids = remained_variants_ids))
 }
 
-
-# Shared dynamic-L loop: repeatedly fits a SuSiE model, increasing L by
-# l_step whenever the number of credible sets saturates L, until max_L.
-# @param fit_fn A function(L) that runs SuSiE with a given L and returns a fit.
-# @param init_L Initial number of causal configurations.
-# @param max_L Maximum number of causal configurations.
-# @param l_step Step size for increasing L.
-# @return The final SuSiE fit object.
-# @noRd
-.dynamic_L_fit <- function(fit_fn, init_L, max_L, l_step) {
-  L <- init_L
-  while (TRUE) {
-    st <- proc.time()
-    result <- fit_fn(L)
-    result$time_elapsed <- proc.time() - st
-    if (!is.null(result$sets$cs) && length(result$sets$cs) >= L && L <= max_L) {
-      L <- L + l_step
-    } else {
-      break
-    }
-  }
-  result
-}
-
-#' @importFrom susieR susie
-#' @export
-susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
-  if (init_L == max_L) {
-    return(susie(X, y, L = init_L, ...))
-  }
-  gst <- proc.time()
-  res <- .dynamic_L_fit(function(L) susie(X, y, L = L, ...), init_L, max_L, l_step)
-  message(paste("Total time elapsed for susie_wrapper:", (proc.time() - gst)[3]))
-  return(res)
-}
-
-#' Wrapper Function for SuSiE RSS with Dynamic L Adjustment
-#'
-#' Performs SuSiE RSS analysis with dynamic L adjustment. Supports both
-#' z+R (correlation matrix) and z+X (genotype matrix) interfaces.
-#'
-#' @param z Z score vector.
-#' @param R LD correlation matrix. Mutually exclusive with X.
-#' @param X Genotype matrix (samples x variants). Mutually exclusive with R.
-#'   When provided, susie_rss uses the low-rank X interface.
-#' @param n Sample size.
-#' @param L Initial number of causal configurations.
-#' @param max_L Maximum number of causal configurations.
-#' @param l_step Step size for increasing L when the limit is reached.
-#' @param R_finite Controls variance inflation to account for finite reference LD.
-#'   Passed to \code{susieR::susie_rss()}.
-#' @param ... Extra parameters passed to susie_rss (e.g., var_y, coverage).
-#' @return SuSiE RSS fit object after dynamic L adjustment
-#' @importFrom susieR susie_rss
-#' @export
-susie_rss_wrapper <- function(z, R = NULL, X = NULL, n = NULL,
-                              L = 10, max_L = 30, l_step = 5,
-                              coverage = 0.95,
-                              R_finite = NULL, ...) {
-  # Validate: exactly one of R or X
-  if (is.null(R) && is.null(X)) stop("Either R or X must be provided.")
-  if (!is.null(R) && !is.null(X)) stop("Only one of R or X should be provided, not both.")
-
-  # Build argument list for susie_rss
-  base_args <- list(z = z, n = n, coverage = coverage,
-                    R_finite = R_finite, ...)
-  if (!is.null(X)) base_args$X <- X else base_args$R <- R
-
-  run_with_L <- function(L_val) do.call(susie_rss, c(base_args, list(L = L_val)))
-
-  if (L == 1) {
-    base_args$max_iter <- 1
-    result <- do.call(susie_rss, c(base_args, list(L = 1)))
-  } else if (L == max_L) {
-    result <- run_with_L(L)
-  } else {
-    result <- .dynamic_L_fit(run_with_L, L, max_L, l_step)
-  }
-
-  result
-}
-
 #' Run the SuSiE RSS pipeline
 #'
 #' Runs SuSiE RSS analysis with the specified method. Supports both z+R
@@ -205,9 +123,8 @@ susie_rss_wrapper <- function(z, R = NULL, X = NULL, n = NULL,
 #' @param LD_mat LD correlation matrix. Mutually exclusive with X_mat.
 #' @param X_mat Genotype matrix (samples x variants). Mutually exclusive with LD_mat.
 #' @param n Sample size.
-#' @param L Initial number of causal configurations (default: 5).
-#' @param max_L Maximum number of causal configurations (default: 30).
-#' @param l_step Step size for dynamic L adjustment (default: 5).
+#' @param L Maximum number of causal configurations (default: 30).
+#' @param L_greedy Initial greedy number of causal configurations (default: 5).
 #' @param analysis_method One of "susie_rss", "single_effect", "bayesian_conditional_regression".
 #' @param coverage Coverage level (default: 0.95).
 #' @param secondary_coverage Secondary coverage levels (default: c(0.7, 0.5)).
@@ -218,11 +135,12 @@ susie_rss_wrapper <- function(z, R = NULL, X = NULL, n = NULL,
 #'   variance inflation. Passed directly to susie_rss.
 #' @param ... Additional parameters passed to susie_rss (e.g., var_y).
 #' @return A list with post-processed SuSiE RSS results.
+#' @importFrom susieR susie_rss
 #' @importFrom magrittr %>%
 #' @importFrom dplyr arrange select
 #' @export
 susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
-                               L = 5, max_L = 30, l_step = 5,
+                               L = 30, L_greedy = 5,
                                analysis_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
                                coverage = 0.95,
                                secondary_coverage = c(0.7, 0.5),
@@ -230,6 +148,9 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
                                min_abs_corr = 0.8,
                                R_finite = NULL, ...) {
   analysis_method <- match.arg(analysis_method)
+  if (is.null(LD_mat) && is.null(X_mat)) stop("Either LD_mat or X_mat must be provided.")
+  if (!is.null(LD_mat) && !is.null(X_mat)) stop("Only one of LD_mat or X_mat should be provided, not both.")
+  if (!is.null(L_greedy)) L_greedy <- min(L_greedy, L)
 
   if (!is.null(sumstats$z)) {
     z <- sumstats$z
@@ -239,17 +160,16 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
     stop("sumstats must have 'z' or ('beta' and 'se') columns.")
   }
 
-  # Common args for susie_rss_wrapper
   common <- list(z = z, n = n, coverage = coverage,
                  R_finite = R_finite, ...)
   if (!is.null(X_mat)) common$X <- X_mat else common$R <- LD_mat
 
   if (analysis_method == "single_effect") {
-    res <- do.call(susie_rss_wrapper, c(common, list(L = 1)))
+    res <- do.call(susie_rss, c(common, list(L = 1, L_greedy = NULL, max_iter = 1)))
   } else if (analysis_method == "bayesian_conditional_regression") {
-    res <- do.call(susie_rss_wrapper, c(common, list(L = L, max_L = max_L, l_step = l_step, max_iter = 1)))
+    res <- do.call(susie_rss, c(common, list(L = L, L_greedy = L_greedy, max_iter = 1)))
   } else {
-    res <- do.call(susie_rss_wrapper, c(common, list(L = L, max_L = max_L, l_step = l_step)))
+    res <- do.call(susie_rss, c(common, list(L = L, L_greedy = L_greedy)))
   }
 
   # For post-processing, need a square matrix (R or computed from X).
@@ -372,12 +292,12 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
       res$sumstats <- data_y
     }
   }
-  max_L <- nrow(susie_output$alpha)
+  n_effects <- nrow(susie_output$alpha)
   if (!is.null(susie_output$V)) {
     # for fSuSiE there is no V for now
     eff_idx <- which(susie_output$V > prior_eff_tol)
   } else {
-    eff_idx <- 1:max_L
+    eff_idx <- seq_len(n_effects)
   }
 
   # Re-filter primary CS purity (susieR default is 0.5, pecotmr default is 0.8)
@@ -446,7 +366,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
       lbf_variable = susie_output$lbf_variable[eff_idx, , drop = FALSE],
       V = if (!is.null(susie_output$V)) susie_output$V[eff_idx] else NULL,
       niter = susie_output$niter,
-      max_L = max_L
+      n_effects = n_effects
     )
     if (mode == "susie") {
       res$susie_result_trimmed$X_column_scale_factors <- susie_output$X_column_scale_factors

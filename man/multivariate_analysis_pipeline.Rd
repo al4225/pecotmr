@@ -15,7 +15,8 @@ multivariate_analysis_pipeline(
   xvar_cutoff = 0.01,
   ld_reference_meta_file = NULL,
   pip_cutoff_to_skip = 0,
-  max_L = -1,
+  L = 30,
+  L_greedy = 5,
   data_driven_prior_matrices = NULL,
   data_driven_prior_matrices_cv = NULL,
   data_driven_prior_weights_cutoff = 1e-04,
@@ -44,7 +45,9 @@ multivariate_analysis_pipeline(
 
 \item{pip_cutoff_to_skip}{Cutoff value for skipping conditions based on PIP values. Default is 0.}
 
-\item{max_L}{The maximum number of components in mvSuSiE. Default is 30.}
+\item{L}{Maximum number of components in mvSuSiE. Default is 30.}
+
+\item{L_greedy}{Initial greedy number of components in mvSuSiE. Default is 5.}
 
 \item{data_driven_prior_matrices}{A list of data-driven covariance matrices for mr.mash weights.}
 
@@ -105,7 +108,8 @@ result <- multivariate_analysis_pipeline(
   Y = multitrait_data$Y,
   maf = colMeans(multitrait_data$X),
   X_variance = multitrait_data$X_variance,
-  max_L = 10,
+  L = 10,
+  L_greedy = 5,
   ld_reference_meta_file = NULL,
   max_cv_variants = -1,
   pip_cutoff_to_skip = 0,

@@ -8,6 +8,8 @@ twas_multivariate_weights_pipeline(
   X,
   Y,
   mnm_fit,
+  L = NULL,
+  L_greedy = 5,
   cv_folds = 5,
   sample_partition = NULL,
   data_driven_prior_matrices = NULL,
@@ -26,6 +28,11 @@ twas_multivariate_weights_pipeline(
 \item{Y}{A matrix of phenotype measurements, where rows represent samples and columns represent conditions.}
 
 \item{mnm_fit}{An object containing the fitted multivariate models (e.g., mvSuSiE and mr.mash fits).}
+
+\item{L}{Maximum number of components in mvSuSiE. If NULL, the number of
+components in the fitted mvSuSiE object is used.}
+
+\item{L_greedy}{Initial greedy number of components in mvSuSiE. Defaults to 5.}
 
 \item{cv_folds}{The number of folds to use for cross-validation. Defaults to 5. Set to 0 to skip cross-validation.}
 

@@ -1,4 +1,4 @@
-context("susie_wrapper")
+context("susie_finemapping")
 
 # =============================================================================
 # lbf_to_alpha_vector (internal)
@@ -285,7 +285,7 @@ test_that("susie_rss_pipeline runs with bayesian_conditional_regression", {
 
   result <- susie_rss_pipeline(sumstats, R,
     analysis_method = "bayesian_conditional_regression",
-    L = 5, max_L = 5
+    L = 5, L_greedy = 5
   )
   expect_true(is.list(result))
   expect_true("susie_result_trimmed" %in% names(result))
@@ -316,7 +316,7 @@ test_that("susie_rss_pipeline uses beta/se when z not provided", {
 
   result <- susie_rss_pipeline(sumstats, R,
     analysis_method = "susie_rss",
-    L = 5, max_L = 5
+    L = 5, L_greedy = 5
   )
   expect_true(is.list(result))
   expect_true("susie_result_trimmed" %in% names(result))
@@ -331,79 +331,6 @@ test_that("susie_rss_pipeline uses beta/se when z not provided", {
       expect_true(all(cs >= 1 & cs <= n))
     }
   }
-})
-
-# =============================================================================
-# susie_rss_wrapper
-# =============================================================================
-
-test_that("susie_rss_wrapper with L=1 runs single effect", {
-  skip_if_not_installed("susieR")
-  set.seed(42)
-  p <- 10
-  R <- diag(p)
-  z <- rnorm(p)
-  result <- susie_rss_wrapper(z = z, R = R, L = 1)
-  expect_true("pip" %in% names(result))
-  expect_length(result$pip, p)
-  expect_true(is.numeric(result$pip))
-  expect_true(all(result$pip >= 0 & result$pip <= 1))
-  # L=1 so PIPs sum to at most 1
-  expect_true(sum(result$pip) <= 1 + 1e-6)
-  if (!is.null(result$sets$cs)) {
-    for (cs in result$sets$cs) {
-      expect_true(all(cs >= 1 & cs <= p))
-    }
-  }
-})
-
-test_that("susie_rss_wrapper with L equal to max_L", {
-  skip_if_not_installed("susieR")
-  set.seed(42)
-  n <- 15
-  z <- rnorm(n)
-  R <- diag(n)
-  result <- susie_rss_wrapper(z = z, R = R, L = 5, max_L = 5)
-  expect_true("pip" %in% names(result))
-})
-
-test_that("susie_rss_wrapper dynamic L with no CS found", {
-  skip_if_not_installed("susieR")
-  set.seed(42)
-  p <- 10
-  R <- diag(p)
-  z <- rep(0.1, p)
-  result <- susie_rss_wrapper(z = z, R = R, L = 2, max_L = 10, l_step = 2)
-  expect_true("pip" %in% names(result))
-})
-
-# =============================================================================
-# susie_wrapper
-# =============================================================================
-
-test_that("susie_wrapper runs with init_L equal to max_L", {
-  skip_if_not_installed("susieR")
-  set.seed(42)
-  n <- 50
-  p <- 10
-  X <- matrix(rnorm(n * p), n, p)
-  y <- X[, 1] * 2 + rnorm(n)
-
-  result <- susie_wrapper(X, y, init_L = 5, max_L = 5)
-  expect_true("pip" %in% names(result))
-  expect_length(result$pip, p)
-})
-
-test_that("susie_wrapper dynamically adjusts L", {
-  skip_if_not_installed("susieR")
-  set.seed(42)
-  n <- 200
-  p <- 20
-  X <- matrix(rnorm(n * p), n, p)
-  y <- X[, 1] + rnorm(n)
-  result <- susie_wrapper(X, y, init_L = 1, max_L = 10, l_step = 2)
-  expect_true("pip" %in% names(result))
-  expect_true(!is.null(result$sets))
 })
 
 # =============================================================================
@@ -525,24 +452,6 @@ adjust_vids <- function(positions = 1:6) {
 }
 
 # =============================================================================
-# susie_rss_wrapper validation (Tier 1)
-# =============================================================================
-
-test_that("susie_rss_wrapper errors when neither R nor X is provided", {
-  expect_error(
-    susie_rss_wrapper(z = rnorm(5)),
-    "Either R or X must be provided"
-  )
-})
-
-test_that("susie_rss_wrapper errors when both R and X are provided", {
-  expect_error(
-    susie_rss_wrapper(z = rnorm(5), R = diag(5), X = matrix(1, 10, 5)),
-    "Only one of R or X should be provided, not both"
-  )
-})
-
-# =============================================================================
 # susie_post_processor: analysis_script and fSuSiE V=NULL branches (Tier 1)
 # =============================================================================
 
@@ -583,7 +492,7 @@ test_that("susie_post_processor stores analysis_script when load_script returns 
   expect_equal(result$analysis_script, "fake_script_content")
 })
 
-test_that("susie_post_processor uses 1:max_L for eff_idx when V is NULL (fSuSiE)", {
+test_that("susie_post_processor keeps all effects when V is NULL (fSuSiE)", {
   skip_if_not_installed("susieR")
   p <- 5
   L <- 3
@@ -653,89 +562,10 @@ test_that("susie_post_processor stores outcome_names, coef, and clfsr in mvsusie
 })
 
 # =============================================================================
-# susie_wrapper: dynamic-L break when cs is NULL (Tier 2)
+# susie_rss_pipeline X-mode branches (Tier 2)
 # =============================================================================
 
-test_that("susie_wrapper breaks out of dynamic-L loop when cs is NULL", {
-  call_count <- 0
-  local_mocked_bindings(
-    susie = function(X, y, L, ...) {
-      call_count <<- call_count + 1
-      list(
-        sets = list(cs = NULL),
-        pip = rep(0.01, ncol(X)),
-        time_elapsed = 0
-      )
-    }
-  )
-  X <- matrix(rnorm(50), 10, 5)
-  y <- rnorm(10)
-  expect_message(
-    result <- susie_wrapper(X, y, init_L = 5, max_L = 20),
-    "Total time elapsed"
-  )
-  # susie should be called exactly once: cs=NULL triggers immediate break
-  expect_equal(call_count, 1)
-})
-
-# =============================================================================
-# susie_rss_wrapper: dynamic-L increment then break (Tier 2)
-# =============================================================================
-
-test_that("susie_rss_wrapper increments L in while-loop then breaks", {
-  call_count <- 0
-  p <- 10
-  local_mocked_bindings(
-    susie_rss = function(z, L, ...) {
-      call_count <<- call_count + 1
-      if (call_count == 1) {
-        # First call: length(cs) >= L, so L should increment
-        list(
-          sets = list(cs = lapply(1:L, function(i) 1:3)),
-          pip = rep(0.1, length(z))
-        )
-      } else {
-        # Second call: length(cs) < L, so loop breaks
-        list(
-          sets = list(cs = list(L1 = 1:3)),
-          pip = rep(0.1, length(z))
-        )
-      }
-    }
-  )
-  z <- rnorm(p)
-  result <- susie_rss_wrapper(z = z, R = diag(p), L = 2, max_L = 20, l_step = 3)
-  # Called twice: once at L=2 (incremented to 5), once at L=5 (broke)
-  expect_equal(call_count, 2)
-  expect_true("pip" %in% names(result))
-})
-
-# =============================================================================
-# susie_rss_wrapper and susie_rss_pipeline X-mode branches (Tier 2)
-# =============================================================================
-
-test_that("susie_rss_wrapper passes X (not R) when X is provided", {
-  captured_args <- NULL
-  p <- 5
-  n <- 20
-  local_mocked_bindings(
-    susie_rss = function(...) {
-      args <- list(...)
-      captured_args <<- args
-      list(
-        sets = list(cs = NULL),
-        pip = rep(0.1, length(args$z))
-      )
-    }
-  )
-  z <- rnorm(p)
-  X <- matrix(rnorm(n * p), n, p)
-  result <- susie_rss_wrapper(z = z, X = X, L = 5, max_L = 5)
-  expect_true("X" %in% names(captured_args))
-  expect_null(captured_args$R)
-})
-
-test_that("susie_rss_pipeline X-mode passes X to wrapper and computes LD from X for post-processor", {
+test_that("susie_rss_pipeline X-mode passes X to susie_rss and computes LD from X for post-processor", {
   skip_if_not_installed("susieR")
   p <- 5
   n <- 20
@@ -745,11 +575,11 @@ test_that("susie_rss_pipeline X-mode passes X to wrapper and computes LD from X 
   X <- matrix(rnorm(n * p), n, p)
   colnames(X) <- vnames
 
-  captured_wrapper_args <- NULL
+  captured_susie_args <- NULL
   captured_pp_data_x <- NULL
   local_mocked_bindings(
-    susie_rss_wrapper = function(...) {
-      captured_wrapper_args <<- list(...)
+    susie_rss = function(...) {
+      captured_susie_args <<- list(...)
       list(
         pip = setNames(rep(0.01, p), vnames),
         alpha = matrix(1 / p, nrow = 5, ncol = p),
@@ -765,9 +595,8 @@ test_that("susie_rss_pipeline X-mode passes X to wrapper and computes LD from X 
     }
   )
   result <- susie_rss_pipeline(list(z = z), X_mat = X)
-  # Wrapper should have received X, not R
-  expect_true("X" %in% names(captured_wrapper_args))
-  expect_null(captured_wrapper_args$R)
+  expect_true("X" %in% names(captured_susie_args))
+  expect_null(captured_susie_args$R)
   # Post-processor should have received a p x p matrix (LD computed from X)
   expect_equal(dim(captured_pp_data_x), c(p, p))
 })
@@ -791,7 +620,7 @@ test_that("susie_rss_pipeline computes LD from first panel when X_mat is a list"
 
   captured_pp_data_x <- NULL
   local_mocked_bindings(
-    susie_rss_wrapper = function(...) {
+    susie_rss = function(...) {
       list(
         pip = setNames(rep(0.01, p), vnames),
         alpha = matrix(1 / p, nrow = 5, ncol = p),

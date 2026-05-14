@@ -55,6 +55,7 @@ build_ld_args <- function(ld_list, subset = NULL) {
 #'   \item LD_info: A list of LD information, each sublist contains LD_variants, LD_matrix, ref_panel  \code{load_LD_matrix}.
 #' }
 #'
+#' @importFrom susieR susie_rss
 #' @export
 colocboost_analysis_pipeline <- function(region_data,
                                          focal_trait = NULL,
@@ -651,10 +652,11 @@ qc_regional_data <- function(region_data,
         if (pip_cutoff_to_skip_ld != 0) {
           pip_vars <- sumstat$sumstats$variant_id
           if (has_genotype) {
-            pip <- susie_rss_wrapper(z = sumstat$sumstats$z,
-              X = LD_data$LD_matrix[, pip_vars, drop = FALSE], L = 1, n = n)$pip
+            pip <- susie_rss(z = sumstat$sumstats$z,
+              X = LD_data$LD_matrix[, pip_vars, drop = FALSE],
+              L = 1, L_greedy = NULL, max_iter = 1, n = n)$pip
           } else {
-            pip <- susie_rss_wrapper(z = sumstat$sumstats$z, R = R_mat, L = 1, n = n)$pip
+            pip <- susie_rss(z = sumstat$sumstats$z, R = R_mat, L = 1, L_greedy = NULL, max_iter = 1, n = n)$pip
           }
           if (pip_cutoff_to_skip_ld < 0) {
             pip_cutoff_to_skip_ld <- 3 * 1 / length(pip_vars)

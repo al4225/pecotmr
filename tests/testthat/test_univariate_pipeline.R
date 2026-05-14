@@ -55,7 +55,7 @@ make_fake_post_result <- function(p) {
       lbf_variable = matrix(rnorm(2 * p), 2, p),
       V = c(0.5, 0.01),
       niter = 10,
-      max_L = 2
+      n_effects = 2
     ),
     top_loci = data.frame(
       variant_id = paste0("chr1:1:A:G"),
@@ -138,7 +138,7 @@ test_that("univariate_analysis_pipeline accepts single-column Y matrix", {
   rownames(Y) <- rownames(X)
   maf <- runif(p, 0.1, 0.5)
   result <- univariate_analysis_pipeline(X = X, Y = Y, maf = maf,
-    twas_weights = FALSE, max_L = 5, init_L = 5)
+    twas_weights = FALSE, L = 5, L_greedy = 5)
   expect_type(result, "list")
 })
 
@@ -202,33 +202,23 @@ test_that("univariate_analysis_pipeline errors on non-numeric Y_scalar", {
   )
 })
 
-test_that("univariate_analysis_pipeline errors on non-positive init_L", {
+test_that("univariate_analysis_pipeline errors on non-positive L", {
   X <- matrix(rnorm(50), 10, 5)
   Y <- rnorm(10)
   maf <- runif(5, 0.05, 0.5)
   expect_error(
-    univariate_analysis_pipeline(X = X, Y = Y, maf = maf, init_L = 0),
-    "init_L must be a positive"
+    univariate_analysis_pipeline(X = X, Y = Y, maf = maf, L = 0),
+    "L must be a positive"
   )
 })
 
-test_that("univariate_analysis_pipeline errors on non-positive max_L", {
+test_that("univariate_analysis_pipeline errors on non-positive L_greedy", {
   X <- matrix(rnorm(50), 10, 5)
   Y <- rnorm(10)
   maf <- runif(5, 0.05, 0.5)
   expect_error(
-    univariate_analysis_pipeline(X = X, Y = Y, maf = maf, max_L = -1),
-    "max_L must be a positive"
-  )
-})
-
-test_that("univariate_analysis_pipeline errors on non-positive l_step", {
-  X <- matrix(rnorm(50), 10, 5)
-  Y <- rnorm(10)
-  maf <- runif(5, 0.05, 0.5)
-  expect_error(
-    univariate_analysis_pipeline(X = X, Y = Y, maf = maf, l_step = 0),
-    "l_step must be a positive"
+    univariate_analysis_pipeline(X = X, Y = Y, maf = maf, L_greedy = 0),
+    "L_greedy must be NULL or a positive"
   )
 })
 
@@ -248,7 +238,7 @@ test_that("univariate_analysis_pipeline runs with minimal valid input", {
 
   result <- univariate_analysis_pipeline(
     X = X, Y = Y, maf = maf,
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
 
   expect_type(result, "list")
@@ -269,7 +259,7 @@ test_that("univariate_analysis_pipeline produces twas_weights when requested", {
 
   result <- univariate_analysis_pipeline(
     X = X, Y = Y, maf = maf,
-    twas_weights = TRUE, init_L = 5, max_L = 5,
+    twas_weights = TRUE, L = 5, L_greedy = 5,
     cv_folds = 2
   )
 
@@ -289,11 +279,11 @@ test_that("univariate_analysis_pipeline respects X_scalar vector", {
 
   r_noscalar <- suppressMessages(univariate_analysis_pipeline(
     X = X, Y = Y, maf = maf, X_scalar = rep(1, p),
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   ))
   r_scalar <- suppressMessages(univariate_analysis_pipeline(
     X = X, Y = Y, maf = maf, X_scalar = rep(2, p),
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   ))
   # X_scalar divides betahat: scalar=2 should halve the estimates
   ratio <- unname(r_noscalar$sumstats$betahat / r_scalar$sumstats$betahat)
@@ -313,7 +303,7 @@ test_that("univariate_analysis_pipeline with cv_folds=0 skips CV", {
 
   result <- univariate_analysis_pipeline(
     X = X, Y = Y, maf = maf,
-    twas_weights = TRUE, init_L = 5, max_L = 5,
+    twas_weights = TRUE, L = 5, L_greedy = 5,
     cv_folds = 0
   )
   expect_type(result, "list")
@@ -395,19 +385,13 @@ test_that("uap: pip_cutoff_to_skip > 0, no signal above threshold => returns emp
   # Mock susie (imported from susieR into pecotmr namespace)
   low_pip <- rep(0.001, inp$p)
   local_mocked_bindings(
-    susie_wrapper = function(...) {
-      fit <- make_fake_susie_fit(inp$p)
-      fit$pip <- low_pip
-      fit
-    },
-    # susie is imported from susieR; mock in pecotmr namespace
     susie = function(...) list(pip = low_pip)
   )
   result <- expect_message(
     univariate_analysis_pipeline(
       X = inp$X, Y = inp$Y, maf = inp$maf,
       pip_cutoff_to_skip = 0.5,
-      twas_weights = FALSE, init_L = 5, max_L = 5
+      twas_weights = FALSE, L = 5, L_greedy = 5
     ),
     "Skipping follow-up"
   )
@@ -421,18 +405,21 @@ test_that("uap: pip_cutoff_to_skip > 0, signal above threshold => continues anal
 
   fake_fit <- make_fake_susie_fit(inp$p)
   fake_post <- make_fake_post_result(inp$p)
+  call_count <- 0
 
   local_mocked_bindings(
-    susie_wrapper = function(...) fake_fit,
+    susie = function(...) {
+      call_count <<- call_count + 1
+      if (call_count == 1) list(pip = high_pip) else fake_fit
+    },
     susie_post_processor = function(...) fake_post,
-    susie = function(...) list(pip = high_pip)
   )
 
   result <- expect_message(
     univariate_analysis_pipeline(
       X = inp$X, Y = inp$Y, maf = inp$maf,
       pip_cutoff_to_skip = 0.5,
-      twas_weights = FALSE, init_L = 5, max_L = 5
+      twas_weights = FALSE, L = 5, L_greedy = 5
     ),
     "Follow-up on region"
   )
@@ -446,7 +433,6 @@ test_that("uap: negative pip_cutoff_to_skip auto-computes threshold", {
   low_pip <- rep(0.1, inp$p)
 
   local_mocked_bindings(
-    susie_wrapper = function(...) make_fake_susie_fit(inp$p),
     susie = function(...) list(pip = low_pip)
   )
 
@@ -454,7 +440,7 @@ test_that("uap: negative pip_cutoff_to_skip auto-computes threshold", {
     univariate_analysis_pipeline(
       X = inp$X, Y = inp$Y, maf = inp$maf,
       pip_cutoff_to_skip = -1,
-      twas_weights = FALSE, init_L = 5, max_L = 5
+      twas_weights = FALSE, L = 5, L_greedy = 5
     ),
     "Skipping follow-up"
   )
@@ -476,7 +462,7 @@ test_that("uap: LD reference filtering subsets X columns and maf", {
       # keep only first 5 variants
       list(data = variant_ids[1:5], idx = 1:5)
     },
-    susie_wrapper = function(X, ...) {
+    susie = function(X, ...) {
       captured_args$ncol_X <<- ncol(X)
       fake_fit
     },
@@ -486,7 +472,7 @@ test_that("uap: LD reference filtering subsets X columns and maf", {
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
     ld_reference_meta_file = "/fake/ld_meta.tsv",
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
   expect_equal(captured_args$ncol_X, 5)
   expect_true("susie_fitted" %in% names(result))
@@ -503,7 +489,7 @@ test_that("uap: LD reference filtering also subsets X_scalar vector", {
     filter_variants_by_ld_reference = function(variant_ids, ld_ref_file) {
       list(data = variant_ids[1:5], idx = 1:5)
     },
-    susie_wrapper = function(...) fake_fit,
+    susie = function(...) fake_fit,
     susie_post_processor = function(susie_output, data_x, data_y, X_scalar, ...) {
       captured_maf <<- length(data_x[1,])
       fake_post
@@ -514,7 +500,7 @@ test_that("uap: LD reference filtering also subsets X_scalar vector", {
     X = inp$X, Y = inp$Y, maf = inp$maf,
     X_scalar = X_scalar_vec,
     ld_reference_meta_file = "/fake/ld_meta.tsv",
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
   expect_true("susie_fitted" %in% names(result))
 })
@@ -534,14 +520,14 @@ test_that("uap: filter_X is invoked when imiss_cutoff is set", {
       filter_called <<- TRUE
       X  # return unchanged
     },
-    susie_wrapper = function(...) fake_fit,
+    susie = function(...) fake_fit,
     susie_post_processor = function(...) fake_post,
   )
 
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
     imiss_cutoff = 0.9,
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
   expect_true(filter_called)
 })
@@ -557,7 +543,7 @@ test_that("uap: filter_X with maf_cutoff active properly subsets maf and X_scala
   captured_ncol <- NULL
   local_mocked_bindings(
     filter_X = function(X, ...) X_filtered,
-    susie_wrapper = function(X, ...) {
+    susie = function(X, ...) {
       captured_ncol <<- ncol(X)
       fake_fit
     },
@@ -567,7 +553,7 @@ test_that("uap: filter_X with maf_cutoff active properly subsets maf and X_scala
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
     maf_cutoff = 0.05, X_scalar = rep(2, inp$p),
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
   expect_equal(captured_ncol, length(keep_cols))
 })
@@ -576,17 +562,17 @@ test_that("uap: filter_X with maf_cutoff active properly subsets maf and X_scala
 #  SECTION 4: univariate_analysis_pipeline – main analysis (susie + post)
 # ========================================================================
 
-test_that("uap: susie_wrapper called with correct args and result stored", {
+test_that("uap: susie called with correct args and result stored", {
   inp <- make_uap_inputs()
   fake_fit <- make_fake_susie_fit(inp$p)
   fake_post <- make_fake_post_result(inp$p)
 
-  captured_init_L <- NULL
-  captured_max_L <- NULL
+  captured_L <- NULL
+  captured_L_greedy <- NULL
   local_mocked_bindings(
-    susie_wrapper = function(X, y, init_L, max_L, l_step, coverage, ...) {
-      captured_init_L <<- init_L
-      captured_max_L <<- max_L
+    susie = function(X, y, L, L_greedy, coverage, ...) {
+      captured_L <<- L
+      captured_L_greedy <<- L_greedy
       fake_fit
     },
     susie_post_processor = function(...) fake_post,
@@ -594,10 +580,10 @@ test_that("uap: susie_wrapper called with correct args and result stored", {
 
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
-    twas_weights = FALSE, init_L = 7, max_L = 15
+    twas_weights = FALSE, L = 15, L_greedy = 7
   )
-  expect_equal(captured_init_L, 7)
-  expect_equal(captured_max_L, 15)
+  expect_equal(captured_L, 15)
+  expect_equal(captured_L_greedy, 7)
   expect_identical(result$susie_fitted, fake_fit)
 })
 
@@ -611,27 +597,27 @@ test_that("uap: susie_post_processor output is merged into result", {
   )
 
   local_mocked_bindings(
-    susie_wrapper = function(...) fake_fit,
+    susie = function(...) fake_fit,
     susie_post_processor = function(...) fake_post,
   )
 
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
   expect_true("variant_names" %in% names(result))
   expect_true("top_loci" %in% names(result))
   expect_true("total_time_elapsed" %in% names(result))
 })
 
-test_that("uap: finemapping_extra_opts are forwarded to susie_wrapper", {
+test_that("uap: finemapping_extra_opts are forwarded to susie", {
   inp <- make_uap_inputs()
   fake_fit <- make_fake_susie_fit(inp$p)
   fake_post <- make_fake_post_result(inp$p)
 
   captured_refine <- NULL
   local_mocked_bindings(
-    susie_wrapper = function(...) {
+    susie = function(...) {
       args <- list(...)
       captured_refine <<- args$refine
       fake_fit
@@ -642,7 +628,7 @@ test_that("uap: finemapping_extra_opts are forwarded to susie_wrapper", {
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
     finemapping_extra_opts = list(refine = TRUE),
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
   expect_true(captured_refine)
 })
@@ -659,7 +645,7 @@ test_that("uap: twas_weights = TRUE calls twas_weights_pipeline", {
 
   twas_called <- FALSE
   local_mocked_bindings(
-    susie_wrapper = function(...) fake_fit,
+    susie = function(...) fake_fit,
     susie_post_processor = function(...) fake_post,
     twas_weights_pipeline = function(...) {
       twas_called <<- TRUE
@@ -669,7 +655,7 @@ test_that("uap: twas_weights = TRUE calls twas_weights_pipeline", {
 
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
-    twas_weights = TRUE, init_L = 5, max_L = 5,
+    twas_weights = TRUE, L = 5, L_greedy = 5,
     cv_folds = 2
   )
   expect_true(twas_called)
@@ -683,14 +669,14 @@ test_that("uap: twas_weights copies top_loci into susie_weights_intermediate", {
   fake_twas <- make_fake_twas_result(inp$p)
 
   local_mocked_bindings(
-    susie_wrapper = function(...) fake_fit,
+    susie = function(...) fake_fit,
     susie_post_processor = function(...) fake_post,
     twas_weights_pipeline = function(...) fake_twas,
   )
 
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
-    twas_weights = TRUE, init_L = 5, max_L = 5,
+    twas_weights = TRUE, L = 5, L_greedy = 5,
     cv_folds = 2
   )
   # top_loci should be copied from fake_post into the twas result
@@ -706,7 +692,7 @@ test_that("uap: twas_weights_pipeline receives correct cv_folds and sample_parti
   captured_cv_folds <- NULL
   captured_partition <- NULL
   local_mocked_bindings(
-    susie_wrapper = function(...) fake_fit,
+    susie = function(...) fake_fit,
     susie_post_processor = function(...) fake_post,
     twas_weights_pipeline = function(X, Y, susie_fit, cv_folds, max_cv_variants,
                                      cv_threads, sample_partition) {
@@ -719,7 +705,7 @@ test_that("uap: twas_weights_pipeline receives correct cv_folds and sample_parti
   sample_part <- rep(1:3, length.out = inp$n)
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
-    twas_weights = TRUE, init_L = 5, max_L = 5,
+    twas_weights = TRUE, L = 5, L_greedy = 5,
     cv_folds = 3, sample_partition = sample_part
   )
   expect_equal(captured_cv_folds, 3)
@@ -733,7 +719,7 @@ test_that("uap: twas_weights = FALSE skips twas_weights_pipeline", {
 
   twas_called <- FALSE
   local_mocked_bindings(
-    susie_wrapper = function(...) fake_fit,
+    susie = function(...) fake_fit,
     susie_post_processor = function(...) fake_post,
     twas_weights_pipeline = function(...) {
       twas_called <<- TRUE
@@ -743,7 +729,7 @@ test_that("uap: twas_weights = FALSE skips twas_weights_pipeline", {
 
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
   expect_false(twas_called)
   expect_false("twas_weights_result" %in% names(result))
@@ -753,7 +739,7 @@ test_that("uap: twas_weights = FALSE skips twas_weights_pipeline", {
 #  SECTION 6: univariate_analysis_pipeline – coverage vector forwarding
 # ========================================================================
 
-test_that("uap: coverage vector is forwarded correctly to susie_wrapper and susie_post_processor", {
+test_that("uap: coverage vector is forwarded correctly to susie and susie_post_processor", {
   inp <- make_uap_inputs()
   fake_fit <- make_fake_susie_fit(inp$p)
   fake_post <- make_fake_post_result(inp$p)
@@ -761,7 +747,7 @@ test_that("uap: coverage vector is forwarded correctly to susie_wrapper and susi
   captured_coverage_wrapper <- NULL
   captured_secondary_cov <- NULL
   local_mocked_bindings(
-    susie_wrapper = function(X, y, init_L, max_L, l_step, coverage, ...) {
+    susie = function(X, y, L, L_greedy, coverage, ...) {
       captured_coverage_wrapper <<- coverage
       fake_fit
     },
@@ -775,7 +761,7 @@ test_that("uap: coverage vector is forwarded correctly to susie_wrapper and susi
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
     coverage = c(0.95, 0.7, 0.5),
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
   expect_equal(captured_coverage_wrapper, 0.95)
   expect_equal(captured_secondary_cov, c(0.7, 0.5))
@@ -788,7 +774,7 @@ test_that("uap: single coverage value => secondary_coverage is NULL", {
 
   captured_secondary_cov <- "NOT_SET"
   local_mocked_bindings(
-    susie_wrapper = function(...) fake_fit,
+    susie = function(...) fake_fit,
     susie_post_processor = function(susie_output, data_x, data_y, X_scalar, Y_scalar, maf,
                                     secondary_coverage, ...) {
       captured_secondary_cov <<- secondary_coverage
@@ -799,7 +785,7 @@ test_that("uap: single coverage value => secondary_coverage is NULL", {
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
     coverage = c(0.95),
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
   expect_null(captured_secondary_cov)
 })
@@ -824,7 +810,7 @@ test_that("uap: both LD filtering and filter_X applied in sequence", {
       list(data = variant_ids[1:8], idx = 1:8)
     },
     filter_X = function(X, ...) X_after_filter,
-    susie_wrapper = function(X, ...) {
+    susie = function(X, ...) {
       captured_ncol <<- ncol(X)
       fake_fit
     },
@@ -835,7 +821,7 @@ test_that("uap: both LD filtering and filter_X applied in sequence", {
     X = inp$X, Y = inp$Y, maf = inp$maf,
     ld_reference_meta_file = "/fake/ld.tsv",
     imiss_cutoff = 0.9, maf_cutoff = 0.05,
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
   expect_equal(captured_ncol, 6)
 })
@@ -922,7 +908,7 @@ test_that("rss: pip_cutoff_to_skip > 0, no signal => early return", {
   local_mocked_bindings(
     load_rss_data = function(...) list(sumstats = ss, n = 1000, var_y = 1),
     rss_basic_qc = function(...) list(sumstats = ss, LD_mat = ld_mat),
-    susie_rss_wrapper = function(...) list(pip = rep(0.01, 5)),
+    susie_rss = function(...) list(pip = rep(0.01, 5)),
   )
 
   result <- expect_message(
@@ -945,7 +931,7 @@ test_that("rss: pip_cutoff_to_skip > 0, signal detected => continues", {
   local_mocked_bindings(
     load_rss_data = function(...) list(sumstats = ss, n = 1000, var_y = 1),
     rss_basic_qc = function(...) list(sumstats = ss, LD_mat = ld_mat),
-    susie_rss_wrapper = function(...) list(pip = c(0.9, 0.01, 0.01, 0.01, 0.01)),
+    susie_rss = function(...) list(pip = c(0.9, 0.01, 0.01, 0.01, 0.01)),
     summary_stats_qc = function(...) list(sumstats = ss, LD_mat = ld_mat, outlier_number = 0),
     partition_LD_matrix = function(...) ld_mat,
     raiss = function(...) list(result_filter = ss, LD_mat = ld_mat),
@@ -975,7 +961,7 @@ test_that("rss: negative pip_cutoff_to_skip auto-computes threshold", {
   local_mocked_bindings(
     load_rss_data = function(...) list(sumstats = ss, n = 1000, var_y = 1),
     rss_basic_qc = function(...) list(sumstats = ss, LD_mat = ld_mat),
-    susie_rss_wrapper = function(...) list(pip = rep(0.01, 5)),
+    susie_rss = function(...) list(pip = rep(0.01, 5)),
   )
 
   # auto threshold = 3 * 1/5 = 0.6, all PIPs are 0.01 so skip
@@ -1501,7 +1487,7 @@ test_that("rss: diagnostics with no CS and no high PIP => diagnostics empty", {
     diagnostics = TRUE,
     finemapping_method = "susie_rss",
     finemapping_opts = list(
-      init_L = 5, max_L = 20, l_step = 5,
+      L = 20, L_greedy = 5,
       coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025,
       min_abs_corr = 0.8
     )
@@ -1521,15 +1507,17 @@ test_that("rss: finemapping_opts are forwarded to susie_rss_pipeline", {
   ld_mat <- make_rss_ld_mat(5)
 
   captured_L <- NULL
+  captured_L_greedy <- NULL
   captured_coverage <- NULL
   captured_signal_cutoff <- NULL
   local_mocked_bindings(
     load_rss_data = function(...) list(sumstats = ss, n = 1000, var_y = 1),
     rss_basic_qc = function(...) list(sumstats = ss, LD_mat = ld_mat),
-    susie_rss_pipeline = function(sumstats, LD_mat, n, var_y, L, max_L, l_step,
+    susie_rss_pipeline = function(sumstats, LD_mat, n, var_y, L, L_greedy,
                                   analysis_method, coverage, secondary_coverage,
                                   signal_cutoff, min_abs_corr, ...) {
       captured_L <<- L
+      captured_L_greedy <<- L_greedy
       captured_coverage <<- coverage
       captured_signal_cutoff <<- signal_cutoff
       make_fake_post_result(5)
@@ -1544,13 +1532,14 @@ test_that("rss: finemapping_opts are forwarded to susie_rss_pipeline", {
     impute = FALSE,
     finemapping_method = "susie_rss",
     finemapping_opts = list(
-      init_L = 3, max_L = 10, l_step = 2,
+      L = 10, L_greedy = 3,
       coverage = c(0.90, 0.6), signal_cutoff = 0.05,
       min_abs_corr = 0.7
     )
   )
 
-  expect_equal(captured_L, 3)
+  expect_equal(captured_L, 10)
+  expect_equal(captured_L_greedy, 3)
   expect_equal(captured_coverage, 0.90)
   expect_equal(captured_signal_cutoff, 0.05)
 })
@@ -1600,14 +1589,14 @@ test_that("uap: both imiss_cutoff and maf_cutoff NULL skips filter_X", {
       filter_called <<- TRUE
       inp$X
     },
-    susie_wrapper = function(...) fake_fit,
+    susie = function(...) fake_fit,
     susie_post_processor = function(...) fake_post,
   )
 
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
     imiss_cutoff = NULL, maf_cutoff = NULL,
-    twas_weights = FALSE, init_L = 5, max_L = 5
+    twas_weights = FALSE, L = 5, L_greedy = 5
   )
 
   expect_false(filter_called)
@@ -1689,7 +1678,7 @@ test_that("rss: diagnostics with null/empty block_cs_metrics => no additional an
     diagnostics = TRUE,
     finemapping_method = "susie_rss",
     finemapping_opts = list(
-      init_L = 5, max_L = 20, l_step = 5,
+      L = 20, L_greedy = 5,
       coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025,
       min_abs_corr = 0.8
     )

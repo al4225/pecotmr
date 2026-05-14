@@ -256,13 +256,13 @@ sdpr_weights <- function(stat, LD, ...) {
 # @param X Genotype matrix (optional).
 # @param y Phenotype vector (optional).
 # @param required_fields Fields that must be present in the fit to extract weights.
-# @param fit_args Extra arguments passed to susie_wrapper when fit is NULL.
-# @param ... Additional arguments forwarded to susie_wrapper.
-#' @importFrom susieR coef.susie
+# @param fit_args Extra arguments passed to susieR::susie when fit is NULL.
+# @param ... Additional arguments forwarded to susieR::susie.
+#' @importFrom susieR coef.susie susie
 #' @noRd
 .susie_extract_weights <- function(fit, X, y, required_fields, fit_args = list(), retain_fit = FALSE, ...) {
   if (is.null(fit)) {
-    fit <- do.call(susie_wrapper, c(list(X = X, y = y), fit_args, list(...)))
+    fit <- do.call(susie, c(list(X = X, y = y), fit_args, list(...)))
   }
   if (!is.null(X) && length(fit$pip) != ncol(X)) {
     stop(paste0(
@@ -321,7 +321,7 @@ mrmash_weights <- function(mrmash_fit = NULL, X = NULL, Y = NULL, ...) {
 #' @export
 mvsusie_weights <- function(mvsusie_fit = NULL, X = NULL, Y = NULL,
                             prior_variance = NULL, residual_variance = NULL,
-                            L = 30, verbose = FALSE, ...) {
+                            L = 30, L_greedy = 5, verbose = FALSE, ...) {
   if (!requireNamespace("mvsusieR", quietly = TRUE)) {
     stop("Package 'mvsusieR' is required. Install with: devtools::install_github('stephenslab/mvsusieR')")
   }
@@ -331,9 +331,10 @@ mvsusie_weights <- function(mvsusie_fit = NULL, X = NULL, Y = NULL,
       stop("Both X and Y must be provided if mvsusie_fit is NULL.")
     }
     if (is.null(prior_variance)) prior_variance <- mvsusieR::create_mixture_prior(R = ncol(Y))
+    if (!is.null(L_greedy)) L_greedy <- min(L_greedy, L)
 
     mvsusie_fit <- mvsusieR::mvsusie(
-      X = X, Y = Y, L = L, prior_variance = prior_variance,
+      X = X, Y = Y, L = L, L_greedy = L_greedy, prior_variance = prior_variance,
       residual_variance = residual_variance,
       estimate_residual_variance = TRUE,
       verbose = verbose, ...
