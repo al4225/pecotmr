@@ -75,6 +75,23 @@ format_cs_column <- function(coverage, method) {
   paste0("CS_", label, "_", method)
 }
 
+.translate_legacy_cs_column_name <- function(coverage) {
+  if (is.null(coverage)) return(NULL)
+  vapply(coverage, function(x) {
+    x <- as.character(x)
+    old_match <- regexec("^cs_coverage_([0-9.]+)$", x, ignore.case = TRUE)
+    old_parts <- regmatches(x, old_match)[[1]]
+    if (length(old_parts) == 2) return(format_cs_column(as.numeric(old_parts[[2]]), "susie"))
+    x
+  }, character(1), USE.NAMES = FALSE)
+}
+
+.translate_legacy_top_loci_cs_columns <- function(top_loci) {
+  if (!is.data.frame(top_loci)) return(top_loci)
+  names(top_loci) <- .translate_legacy_cs_column_name(names(top_loci))
+  top_loci
+}
+
 tag_finemapping_fit <- function(fit, method) {
   if (is.null(fit)) return(NULL)
   method_class <- switch(method,

@@ -52,8 +52,10 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = NULL
       NULL
     }
   )
+  top_loci <- .translate_legacy_top_loci_cs_columns(top_loci)
   if (!is.data.frame(top_loci)) return(.create_null_mr_df(gene_name, mr_format_spec))
   if (is.null(coverage)) coverage <- format_cs_column(coverage_level, method)
+  coverage <- .translate_legacy_cs_column_name(coverage)
   cs_values <- top_loci[[coverage]]
   if (is.null(cs_values) || !any(!is.na(cs_values) & cs_values != 0)) {
     return(.create_null_mr_df(gene_name, mr_format_spec))

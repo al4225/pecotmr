@@ -306,6 +306,8 @@ load_multitrait_tensorqtl_sumstat <- function(
 }
 
 merge_susie_cs <- function(susie_fit, coverage = "CS_95_susie", method = NULL) {
+  if (is.null(coverage)) coverage <- "CS_95_susie"
+  coverage <- .translate_legacy_cs_column_name(coverage)
   # Identify variant IDs that are associated with more than one credible set
   identify_overlap_sets <- function(variants_sets_and_pips_list) {
     overlap_sets <- list()
@@ -369,7 +371,7 @@ merge_susie_cs <- function(susie_fit, coverage = "CS_95_susie", method = NULL) {
     cond_names <- names(susie_fit[[1]])
     rows <- purrr::map_dfr(seq_along(cond_names), function(i) {
       cond_data <- susie_fit[[1]][[i]]
-      top_loci <- cond_data[["top_loci"]]
+      top_loci <- .translate_legacy_top_loci_cs_columns(cond_data[["top_loci"]])
       if (is.null(top_loci) || nrow(top_loci) == 0) return(NULL)
       pip_col <- resolve_pip_column(top_loci, method)
       if (is.null(pip_col)) return(NULL)
