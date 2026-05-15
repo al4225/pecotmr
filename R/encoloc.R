@@ -287,7 +287,9 @@ coloc_wrapper <- function(xqtl_file, gwas_files,
 
       # Report the number of dropped columns from xQTL matrix before subsetting
       num_dropped_cols <- ncol(xqtl_lbf_matrix) - length(common_colnames)
-      message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
+      if (num_dropped_cols > 0) {
+        message("Number of columns dropped from xQTL matrix: ", num_dropped_cols)
+      }
 
       xqtl_lbf_matrix <- xqtl_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
       combined_gwas_lbf_matrix <- combined_gwas_lbf_matrix[, common_colnames, drop = FALSE] %>% as.matrix()
