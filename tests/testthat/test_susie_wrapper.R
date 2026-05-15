@@ -744,7 +744,7 @@ test_that("adjust_susie_weights run_allele_qc=TRUE auto-prepends chrom/pos/A2/A1
   expect_true(length(out$adjusted_susie_weights) > 0)
 })
 
-test_that("format_finemapping_output stores top loci variants", {
+test_that("format_finemapping_output does not duplicate top loci variants", {
   top_loci <- data.frame(
     variant_id = paste0("v", 1:4),
     CS_95_susie = c(0L, 1L, NA_integer_, 0L),
@@ -761,5 +761,6 @@ test_that("format_finemapping_output stores top loci variants", {
     top_loci = top_loci
   )
   out <- format_finemapping_output(post, "susie")
-  expect_equal(out$top_loci_variants, paste0("v", 1:4))
+  expect_false("top_loci_variants" %in% names(out))
+  expect_equal(unique(out$top_loci$variant_id), paste0("v", 1:4))
 })

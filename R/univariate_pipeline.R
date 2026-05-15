@@ -114,7 +114,7 @@ univariate_analysis_pipeline <- function(
 
   message("Fitting SuSiE-inf model on input data ...")
   message("Fitting SuSiE model initialized by SuSiE-inf ...")
-  res$fitted_models <- fit_susie_inf_then_susie(
+  fitted_models <- fit_susie_inf_then_susie(
     X,
     Y,
     args = modifyList(
@@ -122,12 +122,12 @@ univariate_analysis_pipeline <- function(
       list(L = L, L_greedy = L_greedy, coverage = coverage[1])
     )
   )
-  res$susie_inf_fitted <- res$fitted_models[["susie_inf"]]
-  res$susie_fitted <- res$fitted_models[["susie"]]
+  res$susie_inf_fitted <- fitted_models[["susie_inf"]]
+  res$susie_fitted <- fitted_models[["susie"]]
 
   # Process SuSiE results
   susie_post <- postprocess_finemapping_fits(
-    fits = res$fitted_models,
+    fits = fitted_models,
     data_x = X,
     data_y = Y,
     X_scalar = X_scalar,
@@ -146,7 +146,7 @@ univariate_analysis_pipeline <- function(
   # TWAS weights and cross-validation
   if (twas_weights) {
     res$twas_weights_result <- twas_weights_pipeline(
-      X, Y, fitted_models = res$fitted_models,
+      X, Y, fitted_models = fitted_models,
       cv_folds = cv_folds,
       max_cv_variants = max_cv_variants,
       cv_threads = cv_threads,

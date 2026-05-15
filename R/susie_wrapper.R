@@ -198,6 +198,10 @@ postprocess_finemapping_fits <- function(fits, data_x, data_y = NULL,
   names(posts) <- names(fits)
 
   top_loci_long <- bind_rows(lapply(posts, function(x) x$top_loci_long))
+  posts <- lapply(posts, function(x) {
+    x$top_loci_long <- NULL
+    x
+  })
   top_loci <- build_top_loci_wide(top_loci_long, posts)
 
   list(
@@ -513,13 +517,6 @@ add_protocol_top_loci_fields <- function(top_loci, primary_method) {
   top_loci
 }
 
-.top_loci_variants <- function(top_loci, variant_col = "variant_id") {
-  if (is.null(top_loci) || nrow(top_loci) == 0 || !variant_col %in% names(top_loci)) {
-    return(character(0))
-  }
-  unique(top_loci[[variant_col]])
-}
-
 #' Format Fine-mapping Post-processing for Protocol Output
 #'
 #' Converts method-aware fine-mapping post-processing output into the root-level
@@ -528,8 +525,7 @@ add_protocol_top_loci_fields <- function(top_loci, primary_method) {
 #' @param post Output from \code{\link{postprocess_finemapping_fits}}.
 #' @param primary_method Method whose result should populate root-level fields.
 #' @return A list with root-level fields including \code{variant_names},
-#'   \code{susie_result_trimmed}, \code{top_loci}, and
-#'   \code{top_loci_variants}.
+#'   \code{susie_result_trimmed}, \code{top_loci_long}, and \code{top_loci}.
 #' @export
 format_finemapping_output <- function(post, primary_method) {
   method_post <- post$finemapping_results[[primary_method]]
@@ -541,10 +537,8 @@ format_finemapping_output <- function(post, primary_method) {
     method_post[keep_names],
     list(
       susie_result_trimmed = method_post$result_trimmed,
-      finemapping_results = post$finemapping_results,
       top_loci_long = post$top_loci_long,
-      top_loci = add_protocol_top_loci_fields(post$top_loci, primary_method),
-      top_loci_variants = .top_loci_variants(post$top_loci)
+      top_loci = add_protocol_top_loci_fields(post$top_loci, primary_method)
     )
   )
 }
