@@ -1085,6 +1085,7 @@ test_that("twas_weights: SuSiE-inf is fitted before and initializes ordinary SuS
   expect_equal(names(result), c("susie_weights", "susie_inf_weights"))
   expect_length(susie_calls, 2)
   expect_equal(susie_calls[[1]]$unmappable_effects, "inf")
+  expect_equal(susie_calls[[1]]$convergence_method, "pip")
   expect_equal(susie_calls[[2]]$unmappable_effects, "none")
   expect_true("susie_inf" %in% class(susie_calls[[2]]$model_init))
   expect_equal(susie_calls[[2]]$L_greedy, 5)

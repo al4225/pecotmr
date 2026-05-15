@@ -133,7 +133,7 @@ fit_susie_inf_then_susie <- function(X, y, args = list(),
     fit_args <- modifyList(args, susie_inf_args)
     fit_args <- modifyList(fit_args, list(
       X = X, y = y, unmappable_effects = "inf",
-      refine = FALSE, model_init = NULL
+      convergence_method = "pip", refine = FALSE, model_init = NULL
     ))
     susie_inf_fit <- do.call(susie, fit_args)
   }

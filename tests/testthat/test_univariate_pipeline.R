@@ -577,13 +577,15 @@ test_that("uap: susie-inf initializes susie with matching greedy L", {
   captured_calls <- list()
   local_mocked_bindings(
     susie = function(X, y, L, L_greedy, coverage, unmappable_effects = "none",
-                     model_init = NULL, refine = NULL, ...) {
+                     model_init = NULL, refine = NULL,
+                     convergence_method = NULL, ...) {
       captured_calls[[length(captured_calls) + 1]] <<- list(
         L = L,
         L_greedy = L_greedy,
         unmappable_effects = unmappable_effects,
         model_init = model_init,
-        refine = refine
+        refine = refine,
+        convergence_method = convergence_method
       )
       if (identical(unmappable_effects, "inf")) fake_inf_fit else fake_fit
     },
@@ -599,6 +601,7 @@ test_that("uap: susie-inf initializes susie with matching greedy L", {
   expect_equal(captured_calls[[1]]$L, 15)
   expect_equal(captured_calls[[1]]$L_greedy, 7)
   expect_equal(captured_calls[[1]]$unmappable_effects, "inf")
+  expect_equal(captured_calls[[1]]$convergence_method, "pip")
   expect_false(captured_calls[[1]]$refine)
   expect_equal(captured_calls[[2]]$L, 15)
   expect_equal(captured_calls[[2]]$L_greedy, nrow(fake_inf_fit$alpha))

@@ -601,8 +601,11 @@ filter_variants_by_ld_reference <- function(variant_ids, ld_reference_meta_file,
     keep_indices <- intersect(keep_indices, snp_idx)
   }
 
-  message(length(variant_ids) - length(keep_indices), " out of ", length(variant_ids),
-          " total variants dropped due to absence on the reference LD panel.")
+  n_dropped <- length(variant_ids) - length(keep_indices)
+  if (n_dropped > 0) {
+    message(n_dropped, " out of ", length(variant_ids),
+            " total variants dropped due to absence on the reference LD panel.")
+  }
 
   list(data = variant_ids[keep_indices], idx = keep_indices)
 }
