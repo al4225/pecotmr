@@ -808,6 +808,52 @@ test_that("twas_weights_pipeline: twas_weights contains all default methods", {
   expect_true(all(expected_methods %in% names(result$twas_weights)))
 })
 
+test_that("twas_weights_pipeline: stores ensemble weights when ensemble is fitted", {
+  d <- make_data(n = 50, p = 10)
+  y_vec <- as.numeric(d$Y)
+
+  cv_perf <- matrix(NA_real_, nrow = 1, ncol = 6)
+  colnames(cv_perf) <- c("corr", "rsq", "adj_rsq", "pval", "RMSE", "MAE")
+  rownames(cv_perf) <- "outcome_1"
+  cv_perf[1, "rsq"] <- 0.5
+
+  local_mocked_bindings(
+    enet_weights = function(X, y, ...) rep(0.1, ncol(X)),
+    lasso_weights = function(X, y, ...) rep(0.2, ncol(X)),
+    twas_weights_cv = function(X, Y, ...) {
+      list(
+        prediction = list(
+          enet_predicted = matrix(as.numeric(Y), ncol = 1, dimnames = list(rownames(X), "outcome_1")),
+          lasso_predicted = matrix(as.numeric(Y), ncol = 1, dimnames = list(rownames(X), "outcome_1"))
+        ),
+        performance = list(
+          enet_performance = cv_perf,
+          lasso_performance = cv_perf
+        )
+      )
+    },
+    ensemble_weights = function(cv_results, Y, twas_weight_list, ...) {
+      list(
+        method_coef = c(enet = 0.5, lasso = 0.5),
+        ensemble_twas_weights = (twas_weight_list$enet_weights + twas_weight_list$lasso_weights) / 2
+      )
+    }
+  )
+
+  result <- twas_weights_pipeline(
+    d$X, y_vec,
+    weight_methods = list(enet_weights = list(), lasso_weights = list()),
+    cv_folds = 2,
+    ensemble = TRUE,
+    ensemble_r2_threshold = 0,
+    estimate_pi = FALSE
+  )
+
+  expect_true("ensemble_weights" %in% names(result$twas_weights))
+  expect_true("ensemble_predicted" %in% names(result$twas_predictions))
+  expect_true("ensemble" %in% names(result))
+})
+
 test_that("twas_weights_pipeline: predictions have _predicted suffix", {
   d <- make_data(n = 50, p = 10)
   y_vec <- as.numeric(d$Y)
@@ -938,8 +984,6 @@ test_that("twas_weights_pipeline: with fitted_models stores SuSiE intermediates"
   y_vec <- as.numeric(d$Y)
 
   fake_susie <- make_fake_susie_fit(p = 10, L = 5)
-  fake_susie_inf <- make_fake_susie_fit(p = 10, L = 5, inf = TRUE)
-
   local_mocked_bindings(
     enet_weights  = function(X, y, ...) rep(0, ncol(X)),
     lasso_weights = function(X, y, ...) rep(0, ncol(X)),
@@ -955,15 +999,13 @@ test_that("twas_weights_pipeline: with fitted_models stores SuSiE intermediates"
 
   result <- twas_weights_pipeline(
     d$X, y_vec,
-    fitted_models = list(susie = fake_susie, susie_inf = fake_susie_inf),
+    fitted_models = list(susie = fake_susie),
     cv_folds = 0,
     estimate_pi = FALSE
   )
 
   expect_true("susie_weights_intermediate" %in% names(result))
-  expect_true("susie_inf_weights_intermediate" %in% names(result))
   expect_true("mu" %in% names(result$susie_weights_intermediate))
-  expect_true("theta" %in% names(result$susie_inf_weights_intermediate))
 })
 
 test_that("twas_weights_pipeline: fitted_models are injected into SuSiE-family weights", {

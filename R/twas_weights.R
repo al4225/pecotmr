@@ -681,9 +681,6 @@ twas_weights_pipeline <- function(X,
   if (!is.null(fitted_models[["susie"]]) && !is.null(weight_methods$susie_weights)) {
     res$susie_weights_intermediate <- .susie_weight_intermediate(fitted_models[["susie"]], X)
   }
-  if (!is.null(fitted_models[["susie_inf"]]) && !is.null(weight_methods$susie_inf_weights)) {
-    res$susie_inf_weights_intermediate <- .susie_weight_intermediate(fitted_models[["susie_inf"]], X)
-  }
 
   # Check if empirical pi estimation is needed for spike-and-slab methods
   bayes_c_needs_pi <- "bayes_c_weights" %in% names(weight_methods) &&
