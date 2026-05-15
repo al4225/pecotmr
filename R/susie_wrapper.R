@@ -89,6 +89,9 @@ format_cs_column <- function(coverage, method) {
 .translate_legacy_top_loci_cs_columns <- function(top_loci) {
   if (!is.data.frame(top_loci)) return(top_loci)
   names(top_loci) <- .translate_legacy_cs_column_name(names(top_loci))
+  if ("pip_susie" %in% names(top_loci) && !"pip" %in% names(top_loci)) {
+    names(top_loci)[names(top_loci) == "pip_susie"] <- "pip"
+  }
   top_loci
 }
 
@@ -491,7 +494,11 @@ trim_finemapping_fit <- function(fit, effect_idx, method, cs_tables) {
   if (!is.null(fit$mu)) {
     trimmed$mu <- if (length(dim(fit$mu)) == 3) fit$mu[effect_idx, , , drop = FALSE] else fit$mu[effect_idx, , drop = FALSE]
   }
-  if (!is.null(fit$mu2)) trimmed$mu2 <- fit$mu2[effect_idx, , drop = FALSE]
+  if (!is.null(fit$mu2)) {
+    # mu2 is L x p for univariate susie and L x p x R for multivariate (mvsusie).
+    # Match the shape handling used for mu just above.
+    trimmed$mu2 <- if (length(dim(fit$mu2)) == 3) fit$mu2[effect_idx, , , drop = FALSE] else fit$mu2[effect_idx, , drop = FALSE]
+  }
   if (!is.null(fit$theta)) trimmed$theta <- fit$theta
   if (!is.null(fit$omega_weights)) trimmed$omega_weights <- fit$omega_weights
 
@@ -505,16 +512,6 @@ trim_finemapping_fit <- function(fit, effect_idx, method, cs_tables) {
 
   class(trimmed) <- unique(c(method, "susie"))
   trimmed
-}
-
-add_protocol_top_loci_fields <- function(top_loci, primary_method) {
-  if (is.null(top_loci) || nrow(top_loci) == 0) return(top_loci)
-
-  pip_col <- resolve_pip_column(top_loci, primary_method)
-  if (!is.null(pip_col)) {
-    top_loci$pip <- top_loci[[pip_col]]
-  }
-  top_loci
 }
 
 #' Format Fine-mapping Post-processing for Protocol Output
@@ -538,7 +535,7 @@ format_finemapping_output <- function(post, primary_method) {
     list(
       susie_result_trimmed = method_post$result_trimmed,
       top_loci_long = post$top_loci_long,
-      top_loci = add_protocol_top_loci_fields(post$top_loci, primary_method)
+      top_loci = post$top_loci
     )
   )
 }

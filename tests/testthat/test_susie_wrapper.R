@@ -764,3 +764,128 @@ test_that("format_finemapping_output does not duplicate top loci variants", {
   expect_false("top_loci_variants" %in% names(out))
   expect_equal(unique(out$top_loci$variant_id), paste0("v", 1:4))
 })
+
+.make_univariate_data <- function(seed = 42, n = 300, p = 50,
+                                  effect_idx = integer(0), effect_size = NULL) {
+  set.seed(seed)
+  X <- matrix(rnorm(n * p), n, p)
+  colnames(X) <- sprintf("chr1:%d:G:A", seq_len(p))
+  beta <- rep(0, p)
+  if (length(effect_idx) > 0) {
+    if (is.null(effect_size)) effect_size <- rep(1.5, length(effect_idx))
+    beta[effect_idx] <- effect_size
+  }
+  y <- as.numeric(X %*% beta) + rnorm(n, sd = 0.5)
+  list(X = X, y = y)
+}
+
+test_that("postprocess top_loci: single susie with signal yields per-method columns and no unsuffixed pip", {
+  d <- .make_univariate_data(seed = 11, effect_idx = c(10, 30))
+  fit <- susieR::susie(d$X, d$y, L = 5)
+  post <- postprocess_finemapping_fits(list(susie = fit), data_x = d$X, data_y = d$y, coverage = 0.95)
+  expect_false("pip" %in% colnames(post$top_loci))
+  expect_true("pip_susie" %in% colnames(post$top_loci))
+  expect_true("CS_95_susie" %in% colnames(post$top_loci))
+  # No other method's columns
+  expect_length(grep("_susie_inf$", colnames(post$top_loci)), 0)
+  expect_length(grep("_mvsusie$",  colnames(post$top_loci)), 0)
+})
+
+test_that("postprocess top_loci: susie + susie_inf both with signal yield symmetric pip/CS columns", {
+  d <- .make_univariate_data(seed = 12, effect_idx = c(15, 45))
+  fits <- fit_susie_inf_then_susie(d$X, d$y)
+  expect_gt(max(fits$susie$pip), 0.5)
+  expect_gt(max(fits$susie_inf$pip), 0.5)
+  post <- postprocess_finemapping_fits(fits, data_x = d$X, data_y = d$y, coverage = 0.95)
+  cols <- colnames(post$top_loci)
+  expect_false("pip" %in% cols)
+  for (m in c("susie", "susie_inf")) {
+    expect_true(paste0("pip_", m)        %in% cols, info = m)
+    expect_true(paste0("CS_95_", m)      %in% cols, info = m)
+    expect_true(paste0("CS_70_", m)      %in% cols, info = m)
+    expect_true(paste0("CS_50_", m)      %in% cols, info = m)
+  }
+  # top_loci_long contains both methods
+  expect_setequal(unique(post$top_loci_long$method), c("susie", "susie_inf"))
+})
+
+test_that("postprocess top_loci: when one method has no rows in long, its pip column still appears", {
+  # Construct a case where susie has signal but the susie_inf trim gives no CS rows.
+  # We use a high signal_cutoff so susie_inf may not produce top variants.
+  d <- .make_univariate_data(seed = 13, effect_idx = c(20))
+  fits <- fit_susie_inf_then_susie(d$X, d$y)
+  post <- postprocess_finemapping_fits(fits, data_x = d$X, data_y = d$y,
+                                       coverage = 0.95, signal_cutoff = 0.99)
+  cols <- colnames(post$top_loci)
+  # Both pip columns are present because they come from result_trimmed$pip,
+  # independent of whether the method contributed rows to top_loci_long.
+  expect_true("pip_susie" %in% cols)
+  expect_true("pip_susie_inf" %in% cols)
+  expect_false("pip" %in% cols)
+})
+
+test_that("postprocess top_loci: susie + susie_inf + mvsusie all run through trim without dimension errors", {
+  skip_if_not_installed("mvsusieR")
+  d <- .make_univariate_data(seed = 14, effect_idx = c(15, 45))
+  Y_mv <- cbind(d$y, as.numeric(d$X %*% rep(0, ncol(d$X))) + rnorm(length(d$y), sd = 0.5))
+  colnames(Y_mv) <- c("ctx1", "ctx2")
+  fits_uni <- fit_susie_inf_then_susie(d$X, d$y)
+  mv_fit <- mvsusieR::mvsusie(d$X, Y_mv, L = 5,
+                              prior_variance = mvsusieR::create_mixture_prior(R = ncol(Y_mv)),
+                              prior_weights = rep(1 / ncol(d$X), ncol(d$X)))
+  fits_all <- list(susie = fits_uni$susie,
+                   susie_inf = fits_uni$susie_inf,
+                   mvsusie = mv_fit)
+  # Bug B regression: this used to error with "incorrect number of dimensions"
+  # because trim_finemapping_fit indexed mu2 as 2-D regardless of mvsusie's 3-D.
+  expect_no_error(
+    post <- postprocess_finemapping_fits(fits_all, data_x = d$X, data_y = Y_mv, coverage = 0.95)
+  )
+  for (m in c("susie", "susie_inf", "mvsusie")) {
+    expect_true(paste0("pip_", m) %in% colnames(post$top_loci), info = m)
+  }
+  expect_false("pip" %in% colnames(post$top_loci))
+})
+
+test_that("format_finemapping_output no longer copies pip_<primary_method> into an unsuffixed pip column", {
+  d <- .make_univariate_data(seed = 15, effect_idx = c(20, 40))
+  fits <- fit_susie_inf_then_susie(d$X, d$y)
+  post <- postprocess_finemapping_fits(fits, data_x = d$X, data_y = d$y, coverage = 0.95)
+  out <- format_finemapping_output(post, primary_method = "susie")
+  expect_false("pip" %in% colnames(out$top_loci))
+  expect_true("pip_susie" %in% colnames(out$top_loci))
+})
+
+test_that(".translate_legacy_top_loci_cs_columns renames pip_susie -> pip for legacy callers", {
+  new_format <- data.frame(
+    variant_id = c("v1", "v2"),
+    pip_susie = c(0.9, 0.1),
+    CS_95_susie = c(1, 0),
+    pip_susie_inf = c(0.8, 0.2),
+    CS_95_susie_inf = c(1, 0),
+    stringsAsFactors = FALSE
+  )
+  out <- pecotmr:::.translate_legacy_top_loci_cs_columns(new_format)
+  expect_true("pip" %in% colnames(out))
+  expect_false("pip_susie" %in% colnames(out))
+  # The susie_inf and CS columns are untouched
+  expect_true("pip_susie_inf" %in% colnames(out))
+  expect_true("CS_95_susie" %in% colnames(out))
+  expect_true("CS_95_susie_inf" %in% colnames(out))
+})
+
+test_that(".translate_legacy_top_loci_cs_columns leaves existing pip column alone", {
+  legacy <- data.frame(
+    variant_id = c("v1", "v2"),
+    pip = c(0.9, 0.1),
+    cs_coverage_0.95 = c(1, 0),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  out <- pecotmr:::.translate_legacy_top_loci_cs_columns(legacy)
+  expect_true("pip" %in% colnames(out))
+  expect_true("CS_95_susie" %in% colnames(out))   # legacy cs_coverage rename
+  expect_false("cs_coverage_0.95" %in% colnames(out))
+  expect_false("pip_susie" %in% colnames(out))     # no double-conversion
+})
+
