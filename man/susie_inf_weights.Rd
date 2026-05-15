@@ -30,3 +30,16 @@ Numeric vector of variant weights.
 Extracts coefficients from an existing SuSiE-inf fit or fits `susieR::susie()`
 with `unmappable_effects = "inf"`.
 }
+\section{Non-zero weights with zero PIPs}{
+
+SuSiE-inf decomposes effects into a mappable component (driven by `alpha *
+mu`, reported as per-variant PIPs) and an infinitesimal component (driven by
+`theta`). When the fit converges with no mappable effects -- all `V` and `mu`
+zero, so every `pip == 0` -- the returned weights are still non-zero because
+`susieR::coef.susie` adds `theta / X_column_scale_factors` to the mappable
+coefficient. This is intentional: it captures diffuse polygenic signal that
+the mappable component could not localize to any credible set. Consumers
+that interpret per-variant PIPs as a gate on whether to use the weights
+should be aware that low or zero PIPs do not imply zero TWAS weights here.
+}
+

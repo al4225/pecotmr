@@ -13,7 +13,7 @@ format_finemapping_output(post, primary_method)
 }
 \value{
 A list with root-level fields including \code{variant_names},
-\code{susie_result_trimmed}, \code{top_loci_long}, and \code{top_loci}.
+  \code{susie_result_trimmed}, \code{top_loci_long}, and \code{top_loci}.
 }
 \description{
 Converts method-aware fine-mapping post-processing output into the root-level

@@ -2,7 +2,7 @@
 % Please edit documentation in R/susie_wrapper.R
 \name{postprocess_finemapping_fits}
 \alias{postprocess_finemapping_fits}
-\title{Post-process SuSiE-family Fine-mapping Fits}
+\title{Post-process Fine-mapping Fits}
 \usage{
 postprocess_finemapping_fits(
   fits,
@@ -20,37 +20,41 @@ postprocess_finemapping_fits(
 )
 }
 \arguments{
-\item{fits}{Named list of fine-mapping fit objects. Names define method identity.}
+\item{fits}{Named list of fine-mapping fits. Names define method identity,
+for example \code{susie}, \code{susie_inf}, \code{susie_rss},
+\code{mvsusie}, or \code{fsusie}.}
 
-\item{data_x}{Genotype matrix or LD correlation matrix used for credible-set purity.}
+\item{data_x}{Genotype matrix, LD/correlation matrix, or other method-specific
+input used for credible-set purity and correlations.}
 
-\item{data_y}{Phenotype vector, matrix, or summary-statistics list.}
+\item{data_y}{Phenotype vector/matrix or summary statistics. Default NULL.}
 
-\item{X_scalar}{Scalar or vector for genotype scaling.}
+\item{X_scalar}{Scaling factor for genotype effects. Default 1.}
 
-\item{y_scalar}{Scalar for phenotype scaling.}
+\item{y_scalar}{Scaling factor for phenotype effects. Default 1.}
 
-\item{maf}{Minor allele frequencies.}
+\item{maf}{Minor allele frequencies. Default NULL.}
 
 \item{coverage}{Primary credible-set coverage.}
 
 \item{secondary_coverage}{Additional credible-set coverages.}
 
-\item{signal_cutoff}{PIP cutoff for top loci.}
+\item{signal_cutoff}{PIP cutoff for including non-CS variants in top loci.}
 
-\item{other_quantities}{Additional values to carry into method results.}
+\item{other_quantities}{Optional list carried into each method result.}
 
-\item{prior_eff_tol}{Prior-effect tolerance for trimming.}
+\item{prior_eff_tol}{Tolerance for retaining effects by prior variance.}
 
-\item{min_abs_corr}{Minimum credible-set purity.}
+\item{min_abs_corr}{Minimum absolute correlation for credible-set purity.}
 }
 \value{
 A list with \code{finemapping_results}, \code{top_loci_long}, and
-\code{top_loci}. The long table is lossless, with one row per
-variant-method-coverage-CS membership. The wide table stores one row per
-variant, method-specific \code{pip_<method>} columns, method-specific
-\code{CS_<coverage>_<method>} columns, and \code{model_source}.
+  \code{top_loci}. The long table is lossless, with one row per
+  variant-method-coverage-CS membership. The wide table stores one row per
+  variant, method-specific \code{pip_<method>} columns, method-specific
+  \code{CS_<coverage>_<method>} columns, and \code{model_source}.
 }
 \description{
-Post-process SuSiE-family fine-mapping fits using method-aware S3 dispatch.
+Applies method-aware post-processing to one or more SuSiE-family fits and
+builds both a method-specific result list and shared top-loci tables.
 }

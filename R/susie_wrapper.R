@@ -218,22 +218,27 @@ postprocess_finemapping_fit <- function(fit, ...) {
   UseMethod("postprocess_finemapping_fit")
 }
 
+#' @exportS3Method
 postprocess_finemapping_fit.susie <- function(fit, method = "susie", ...) {
   .postprocess_finemapping_fit_common(fit, method = method, cs_input = "X", ...)
 }
 
+#' @exportS3Method
 postprocess_finemapping_fit.susie_inf <- function(fit, method = "susie_inf", ...) {
   .postprocess_finemapping_fit_common(fit, method = method, cs_input = "X", ...)
 }
 
+#' @exportS3Method
 postprocess_finemapping_fit.susie_rss <- function(fit, method = "susie_rss", ...) {
   .postprocess_finemapping_fit_common(fit, method = method, cs_input = "Xcorr", ...)
 }
 
+#' @exportS3Method
 postprocess_finemapping_fit.mvsusie <- function(fit, method = "mvsusie", ...) {
   .postprocess_finemapping_fit_common(fit, method = method, cs_input = "X", ...)
 }
 
+#' @exportS3Method
 postprocess_finemapping_fit.susiF <- function(fit, method = "fsusie", ...) {
   .postprocess_finemapping_fit_common(fit, method = method, cs_input = "fsusie", ...)
 }
@@ -330,6 +335,8 @@ select_effects <- function(fit, prior_eff_tol = 1e-9) {
   NULL
 }
 
+#' @importFrom susieR get_cs_correlation
+#' @noRd
 compute_cs_tables <- function(fit, data_x, coverage = NULL,
                               secondary_coverage = c(0.7, 0.5),
                               method = "susie", cs_input = c("X", "Xcorr", "fsusie"),
@@ -713,6 +720,7 @@ get_top_variants_idx <- function(susie_output, signal_cutoff) {
 }
 # Returns a data.frame(variant_idx, cs_idx) with one row per (variant, CS) pair.
 # Variants in multiple CSs get multiple rows.
+#' @importFrom stringr str_replace
 #' @noRd
 get_cs_info <- function(susie_output_sets_cs, top_variants_idx) {
   cs_names <- names(susie_output_sets_cs)

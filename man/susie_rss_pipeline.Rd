@@ -55,8 +55,8 @@ Default NULL disables mismatch correction.}
 }
 \value{
 A list with post-processed SuSiE RSS results. Method-specific
-\code{top_loci} columns use the selected \code{analysis_method}, for
-example \code{pip_susie_rss} or \code{pip_single_effect}.
+  \code{top_loci} columns use the selected \code{analysis_method}, for
+  example \code{pip_susie_rss} or \code{pip_single_effect}.
 }
 \description{
 Runs SuSiE RSS analysis with the specified method. Supports both z+R
