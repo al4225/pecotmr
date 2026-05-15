@@ -793,15 +793,32 @@ twas_weights_pipeline <- function(X,
         }, numeric(1))
         names(method_rsq) <- gsub("_performance$", "", names(method_rsq))
 
+        # NA R-squared already implies the method is unusable for the ensemble: a
+        # method whose CV predictions are degenerate (zero variance across all
+        # held-out folds) yields cor(predictions, y) = NA and therefore rsq = NA.
+        # So !is.na(method_rsq) is sufficient to drop both NA-rsq and degenerate
+        # methods - no separate variance check needed.
         passing <- !is.na(method_rsq) & method_rsq >= ensemble_r2_threshold
         n_passing <- sum(passing)
 
         if (n_passing < 2) {
+          # Ensemble (stacked regression) requires at least 2 base learners.
+          # Build a per-method status line so the user can see which methods
+          # dropped out and why (NA R-squared from degenerate CV predictions,
+          # or simply R-squared below the cutoff).
+          reason <- ifelse(passing, "(passed)",
+                    ifelse(is.na(method_rsq),
+                           "(dropped: NA R-squared - likely degenerate CV predictions)",
+                           "(dropped: R-squared below cutoff)"))
           passed_info <- paste0("  ", names(method_rsq), ": R-squared = ",
-                                round(method_rsq, 4),
-                                ifelse(passing, " (passed)", " (failed)"))
-          message("Ensemble TWAS could not be run because fewer than 2 methods ",
-                  "passed the R-squared cutoff of ", ensemble_r2_threshold, ".\n",
+                                round(method_rsq, 4), " ", reason)
+          surviving <- if (n_passing == 1) {
+            paste0(" Use the surviving method's weights directly: ",
+                   names(method_rsq)[passing], ".")
+          } else ""
+          message("Ensemble TWAS skipped: ", n_passing, " of ", length(method_rsq),
+                  " methods passed the R-squared cutoff of ", ensemble_r2_threshold,
+                  " (need >= 2).", surviving, "\n",
                   "Method R-squared values:\n",
                   paste(passed_info, collapse = "\n"))
         } else {
