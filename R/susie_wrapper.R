@@ -449,11 +449,11 @@ build_top_loci_wide <- function(top_loci_long, posts) {
     out[[pip_col]] <- as.numeric(pip[ids])
 
     method_rows <- top_loci_long[top_loci_long$method == method, , drop = FALSE]
-    for (cov in unique(method_rows$coverage)) {
+    for (cov in sort(unique(top_loci_long$coverage), decreasing = TRUE)) {
       cs_col <- format_cs_column(cov, method)
       out[[cs_col]] <- vapply(ids, function(id) {
         cs <- method_rows$cs[method_rows$variant_id == id & method_rows$coverage == cov]
-        if (length(cs) == 0) return(NA_integer_)
+        if (length(cs) == 0) return(0L)
         min(cs)
       }, integer(1))
     }

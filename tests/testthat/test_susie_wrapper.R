@@ -889,3 +889,24 @@ test_that(".translate_legacy_top_loci_cs_columns leaves existing pip column alon
   expect_false("pip_susie" %in% colnames(out))     # no double-conversion
 })
 
+
+test_that("top_loci has symmetric CS_<cov>_<method> columns even for methods with no surviving CSes", {
+  d <- .make_univariate_data(seed = 16, effect_idx = c(25))
+  fits <- fit_susie_inf_then_susie(d$X, d$y)
+  # Force one method (susie_inf) to have no surviving effects: zero out V so
+  # select_effects drops everything.
+  fits$susie_inf$V <- rep(0, length(fits$susie_inf$V))
+  post <- postprocess_finemapping_fits(fits, data_x = d$X, data_y = d$y,
+                                       coverage = 0.95, secondary_coverage = c(0.7, 0.5))
+  cols <- colnames(post$top_loci)
+  for (m in c("susie", "susie_inf")) {
+    for (cov_lbl in c("CS_95_", "CS_70_", "CS_50_")) {
+      expect_true(paste0(cov_lbl, m) %in% cols,
+                  info = paste("missing", paste0(cov_lbl, m)))
+    }
+  }
+  # susie_inf had no surviving effects -> all CS_*_susie_inf are 0
+  for (col in grep("^CS_.*_susie_inf$", cols, value = TRUE)) {
+    expect_true(all(post$top_loci[[col]] == 0L), info = col)
+  }
+})
