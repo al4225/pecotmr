@@ -355,7 +355,8 @@ test_that("pipeline: ensemble=TRUE with only 1 method prints skip message", {
     )
   )
 
-  expect_true(any(grepl("at least 2 weight methods", msgs)))
+  # Should see the skip message
+  expect_true(any(grepl("Ensemble model skipped.*only 1 weight method provided", msgs)))
 
   # No ensemble result should be present
   expect_null(res$ensemble)
@@ -385,7 +386,7 @@ test_that("pipeline: ensemble=TRUE skips when methods fail R^2 cutoff", {
     )
   )
 
-  expect_true(any(grepl("fewer than 2 methods passed the R.*cutoff", msgs)))
+  expect_true(any(grepl("Ensemble TWAS skipped", msgs)))
   expect_null(res$ensemble)
   expect_null(res$twas_weights$ensemble_weights)
 })
@@ -487,7 +488,7 @@ test_that("pipeline: ensemble_r2_threshold filters methods for ensemble", {
       ensemble_r2_threshold = 0.99
     )
   )
-  expect_true(any(grepl("fewer than 2 methods passed", msgs_high)))
+  expect_true(any(grepl("Ensemble TWAS skipped", msgs_high)))
   expect_null(res_high$ensemble)
 })
 
