@@ -13,13 +13,11 @@ format_finemapping_output(post, primary_method)
 }
 \value{
 A list with root-level fields including \code{variant_names},
-  \code{susie_result_trimmed}, and the single unified \code{top_loci}
-  22-column table.
+  \code{susie_result_trimmed}, and \code{top_loci}.
 }
 \description{
 Converts method-aware fine-mapping post-processing output into the root-level
-fields consumed by protocol RDS files. The single top-loci output is the
-\code{top_loci} field (the 22-column unified table); there is no
-\code{top_loci_long}, no wide-format \code{top_loci}, and no
-\code{top_loci_export}.
+fields consumed by protocol RDS files. Exposes the single 22-column unified
+\code{top_loci} table alongside \code{susie_result_trimmed},
+\code{variant_names}, and method-specific intermediates.
 }

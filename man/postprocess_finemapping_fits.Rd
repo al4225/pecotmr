@@ -50,11 +50,9 @@ input used for credible-set purity and correlations.}
 \value{
 A list with \code{finemapping_results} (per-method post-processed
   objects, each carrying a trimmed fit and method-specific intermediates)
-  and the single unified \code{top_loci} table in the fixed 22-column
-  shape (see \code{\link{build_top_loci}}). Per-method contributions are
-  produced by \code{build_top_loci()} once per method and row-bound into
-  this single \code{top_loci}. There is no separately exposed
-  \code{top_loci_long} or wide-format \code{top_loci}.
+  and a single unified \code{top_loci} table in the fixed 22-column shape
+  (see \code{\link{build_top_loci}}). Per-method contributions are
+  row-bound into \code{top_loci} by an outer method for-loop.
 }
 \description{
 Applies method-aware post-processing to one or more SuSiE-family fits and
