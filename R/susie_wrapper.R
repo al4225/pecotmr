@@ -263,7 +263,8 @@ postprocess_finemapping_fit.susiF <- function(fit, method = "fsusie", ...) {
   )
   top_loci_long <- build_top_loci_long(
     fit, cs_tables, variant_names = variant_names, sumstats = sumstats,
-    maf = maf, method = method, signal_cutoff = signal_cutoff
+    maf = maf, method = method, signal_cutoff = signal_cutoff,
+    data_x = data_x, data_y = data_y, other_quantities = other_quantities
   )
 
   trimmed <- trim_finemapping_fit(fit, effect_idx, method, cs_tables)
@@ -408,9 +409,36 @@ compute_cs_table <- function(fit, data_x, coverage, cs_input = c("X", "Xcorr", "
 }
 
 build_top_loci_long <- function(fit, cs_tables, variant_names, sumstats = NULL,
-                                maf = NULL, method, signal_cutoff = 0.1) {
+                                maf = NULL, method, signal_cutoff = 0.1,
+                                data_x = NULL, data_y = NULL,
+                                other_quantities = NULL) {
   if (length(cs_tables) == 0) return(.empty_top_loci_long())
   coverage_values <- attr(cs_tables, "coverage")
+
+  # Per-fit constants (broadcast to every row of this fit's slice).
+  data_y_mat <- if (!is.null(data_y)) as.matrix(data_y) else NULL
+  fit_n              <- if (is.null(data_y_mat)) NA_integer_ else nrow(data_y_mat)
+  fit_variant_number <- if (!is.null(data_x)) ncol(data_x) else NA_integer_
+  fit_gene_id        <- if (!is.null(data_y_mat) && !is.null(colnames(data_y_mat))) {
+    colnames(data_y_mat)[1]
+  } else NA_character_
+  fit_region   <- other_quantities$region
+  fit_event_id <- if (!is.null(other_quantities$condition_id) &&
+                      !is.na(fit_gene_id) && nzchar(fit_gene_id)) {
+    paste(other_quantities$condition_id, fit_gene_id, sep = "_")
+  } else NULL
+
+  # Per-variant posterior effect and SE, computed once for all variants.
+  alpha <- as.matrix(fit$alpha)
+  mu    <- if (!is.null(fit$mu))  as.matrix(fit$mu)  else NULL
+  mu2   <- if (!is.null(fit$mu2)) as.matrix(fit$mu2) else NULL
+  posterior_effect <- if (!is.null(mu) && all(dim(alpha) == dim(mu))) {
+    colSums(alpha * mu)
+  } else rep(NA_real_, length(variant_names))
+  posterior_effect_se <- if (!is.null(mu2) && all(dim(alpha) == dim(mu2))) {
+    sqrt(pmax(colSums(alpha * mu2) - posterior_effect^2, 0))
+  } else rep(NA_real_, length(variant_names))
+
   rows <- lapply(seq_along(cs_tables), function(i) {
     cs_table <- cs_tables[[i]]
     cov <- coverage_values[[i]]
@@ -419,14 +447,47 @@ build_top_loci_long <- function(fit, cs_tables, variant_names, sumstats = NULL,
     if (is.null(cs_info) || nrow(cs_info) == 0) return(NULL)
     idx <- cs_info$variant_idx
     optional_cols <- .top_loci_optional_columns(idx, sumstats, maf)
+
+    # cs_purity: prefer susieR's sets$purity$min.abs.corr; fall back to
+    # cs_corr when purity is unavailable; PIP-only retained rows get 0.
+    sets_purity <- cs_table$sets$purity
+    cs_purity_per_cs <- if (!is.null(sets_purity) &&
+                            "min.abs.corr" %in% names(sets_purity)) {
+      as.numeric(sets_purity$min.abs.corr)
+    } else if (!is.null(cs_table$cs_corr)) {
+      vapply(seq_along(cs_table$cs_corr), function(j) {
+        m <- cs_table$cs_corr[[j]]
+        if (is.null(m)) return(NA_real_)
+        if (!is.matrix(m) || nrow(m) <= 1) return(1)
+        min(abs(m[upper.tri(m)]))
+      }, numeric(1))
+    } else {
+      rep(NA_real_, length(cs_table$sets$cs))
+    }
+    cs_purity_per_row <- vapply(cs_info$cs_idx, function(cs_i) {
+      if (is.na(cs_i) || cs_i == 0L) return(0)
+      if (cs_i > length(cs_purity_per_cs)) return(NA_real_)
+      cs_purity_per_cs[cs_i]
+    }, numeric(1))
+
     base <- data.frame(
-      variant_id = variant_names[idx],
-      method = method,
-      coverage = cov,
-      cs = as.integer(cs_info$cs_idx),
-      pip = as.numeric(fit$pip[idx]),
-      stringsAsFactors = FALSE
+      variant_id            = variant_names[idx],
+      method                = method,
+      coverage              = cov,
+      cs                    = as.integer(cs_info$cs_idx),
+      pip                   = as.numeric(fit$pip[idx]),
+      conditional_effect    = posterior_effect[idx],
+      conditional_effect_se = posterior_effect_se[idx],
+      cs_purity             = cs_purity_per_row,
+      stringsAsFactors      = FALSE
     )
+    # Per-fit constants broadcast to every row.
+    base$n              <- fit_n
+    base$variant_number <- fit_variant_number
+    base$gene_id        <- fit_gene_id
+    if (!is.null(fit_region))   base$region   <- fit_region
+    if (!is.null(fit_event_id)) base$event_ID <- fit_event_id
+
     if (ncol(optional_cols) > 0) cbind(base, optional_cols) else base
   })
   out <- bind_rows(rows)
@@ -436,7 +497,12 @@ build_top_loci_long <- function(fit, cs_tables, variant_names, sumstats = NULL,
 .empty_top_loci_long <- function() {
   data.frame(
     variant_id = character(), method = character(), coverage = numeric(),
-    cs = integer(), pip = numeric(), stringsAsFactors = FALSE
+    cs = integer(), pip = numeric(),
+    conditional_effect = numeric(), conditional_effect_se = numeric(),
+    cs_purity = numeric(),
+    n = integer(), variant_number = integer(),
+    gene_id = character(),
+    stringsAsFactors = FALSE
   )
 }
 
@@ -489,6 +555,137 @@ build_top_loci_wide <- function(top_loci_long, posts) {
   }, character(1))
   rownames(out) <- NULL
   out
+}
+
+#' Build the unified compact top-loci export table.
+#'
+#' Projects an annotated \code{top_loci_long} (as produced by
+#' \code{postprocess_finemapping_fits()} when called with \code{data_x},
+#' \code{data_y}, and an \code{other_quantities} list containing
+#' \code{region} and \code{condition_id}) into the fixed-order compact
+#' export schema used by the unified fine-mapping output.
+#'
+#' The output column order is exactly: \code{#chr}, \code{start}, \code{end},
+#' \code{a1}, \code{a2}, \code{variant_ID}, \code{gene_ID}, \code{event_ID},
+#' \code{cs_coverage_0.95}, \code{cs_coverage_0.7}, \code{cs_coverage_0.5},
+#' \code{cs_purity}, \code{PIP}, \code{conditional_effect},
+#' \code{conditional_effect_se}, \code{analysis_region},
+#' \code{analysis_variants_number}, \code{beta}, \code{se}, \code{n},
+#' \code{maf}.
+#'
+#' @param long An annotated \code{top_loci_long} data frame. Must contain
+#'   the columns \code{variant_id}, \code{pip}, \code{coverage}, \code{cs},
+#'   \code{conditional_effect}, \code{conditional_effect_se},
+#'   \code{cs_purity}, \code{gene_id}, \code{n}, \code{variant_number},
+#'   \code{region}, \code{event_ID}, \code{betahat}, \code{sebetahat},
+#'   \code{maf}. Missing any required column raises an explicit error
+#'   rather than silently filling \code{NA}.
+#' @return A data frame with the fixed compact-export schema.
+#' @export
+build_top_loci_export <- function(long) {
+  required <- c("variant_id", "pip", "coverage", "cs",
+                "conditional_effect", "conditional_effect_se", "cs_purity",
+                "gene_id", "n", "variant_number", "region", "event_ID",
+                "betahat", "sebetahat", "maf")
+  if (is.null(long) || !is.data.frame(long)) {
+    stop("build_top_loci_export: `long` must be a data frame.")
+  }
+  if (nrow(long) == 0) return(.empty_top_loci_export())
+  missing_cols <- setdiff(required, names(long))
+  if (length(missing_cols) > 0) {
+    stop("build_top_loci_export: `long` is missing required columns: ",
+         paste(missing_cols, collapse = ", "))
+  }
+
+  parsed <- tryCatch(
+    parse_variant_id(long$variant_id),
+    error = function(e) {
+      stop("build_top_loci_export: parse_variant_id failed: ",
+           conditionMessage(e))
+    }
+  )
+  if (is.null(parsed) || nrow(parsed) != nrow(long)) {
+    stop("build_top_loci_export: parse_variant_id did not return one row ",
+         "per input row.")
+  }
+
+  # Build a key per (variant_id, gene_id, cs) — one row per CS membership
+  # at the export grain. PIP-only retained variants have cs = 0.
+  key_grid <- unique(long[, c("variant_id", "gene_id", "cs"), drop = FALSE])
+  rownames(key_grid) <- NULL
+
+  coverage_targets <- c(0.95, 0.7, 0.5)
+  cs_coverage_cols <- paste0("cs_coverage_", coverage_targets)
+
+  pick_first <- function(col, default = NA) {
+    vapply(seq_len(nrow(key_grid)), function(i) {
+      sel <- long$variant_id == key_grid$variant_id[i] &
+             long$gene_id    == key_grid$gene_id[i] &
+             long$cs         == key_grid$cs[i]
+      hit <- long[[col]][sel]
+      if (length(hit) == 0) default else hit[[1]]
+    }, default)
+  }
+
+  cs_coverage_mat <- vapply(seq_len(nrow(key_grid)), function(i) {
+    vapply(coverage_targets, function(cov) {
+      sel <- long$variant_id == key_grid$variant_id[i] &
+             long$gene_id    == key_grid$gene_id[i] &
+             long$cs         == key_grid$cs[i] &
+             long$coverage   == cov
+      if (any(sel)) as.integer(long$cs[sel][[1]]) else 0L
+    }, integer(1))
+  }, integer(length(coverage_targets)))
+  cs_coverage_mat <- if (is.null(dim(cs_coverage_mat))) {
+    matrix(cs_coverage_mat, nrow = length(coverage_targets))
+  } else cs_coverage_mat
+  cs_coverage_mat <- t(cs_coverage_mat)
+  colnames(cs_coverage_mat) <- cs_coverage_cols
+
+  # Resolve per-row variant coordinates using a lookup into parsed.
+  variant_first_idx <- match(key_grid$variant_id, long$variant_id)
+
+  out <- data.frame(
+    "#chr"                   = parsed$chrom[variant_first_idx],
+    start                    = parsed$pos[variant_first_idx] - 1L,
+    end                      = parsed$pos[variant_first_idx],
+    a1                       = parsed$A1[variant_first_idx],
+    a2                       = parsed$A2[variant_first_idx],
+    variant_ID               = key_grid$variant_id,
+    gene_ID                  = key_grid$gene_id,
+    event_ID                 = pick_first("event_ID", NA_character_),
+    "cs_coverage_0.95"       = cs_coverage_mat[, "cs_coverage_0.95"],
+    "cs_coverage_0.7"        = cs_coverage_mat[, "cs_coverage_0.7"],
+    "cs_coverage_0.5"        = cs_coverage_mat[, "cs_coverage_0.5"],
+    cs_purity                = pick_first("cs_purity", NA_real_),
+    PIP                      = pick_first("pip", NA_real_),
+    conditional_effect       = pick_first("conditional_effect", NA_real_),
+    conditional_effect_se    = pick_first("conditional_effect_se", NA_real_),
+    analysis_region          = pick_first("region", NA_character_),
+    analysis_variants_number = pick_first("variant_number", NA_integer_),
+    beta                     = pick_first("betahat", NA_real_),
+    se                       = pick_first("sebetahat", NA_real_),
+    n                        = pick_first("n", NA_integer_),
+    maf                      = pick_first("maf", NA_real_),
+    stringsAsFactors         = FALSE,
+    check.names              = FALSE
+  )
+  rownames(out) <- NULL
+  out
+}
+
+.empty_top_loci_export <- function() {
+  data.frame(
+    "#chr" = integer(), start = integer(), end = integer(),
+    a1 = character(), a2 = character(), variant_ID = character(),
+    gene_ID = character(), event_ID = character(),
+    "cs_coverage_0.95" = integer(), "cs_coverage_0.7" = integer(),
+    "cs_coverage_0.5" = integer(), cs_purity = numeric(), PIP = numeric(),
+    conditional_effect = numeric(), conditional_effect_se = numeric(),
+    analysis_region = character(), analysis_variants_number = integer(),
+    beta = numeric(), se = numeric(), n = integer(), maf = numeric(),
+    stringsAsFactors = FALSE, check.names = FALSE
+  )
 }
 
 trim_finemapping_fit <- function(fit, effect_idx, method, cs_tables) {

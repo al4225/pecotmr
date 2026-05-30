@@ -910,3 +910,187 @@ test_that("top_loci has symmetric CS_<cov>_<method> columns even for methods wit
     expect_true(all(post$top_loci[[col]] == 0L), info = col)
   }
 })
+
+# ============================================================================
+# Unified top-loci annotated long + build_top_loci_export
+# ============================================================================
+
+# Helper: build a minimal fake fit + cs_tables that build_top_loci_long accepts.
+.make_fake_inputs_for_annotated_long <- function(variant_ids,
+                                                 cs_membership,
+                                                 cs_purity_value = 0.85,
+                                                 n_samples = 100,
+                                                 n_variants = NULL,
+                                                 pip = NULL) {
+  p <- length(variant_ids)
+  if (is.null(n_variants)) n_variants <- p
+  if (is.null(pip)) pip <- seq(0.6, 0.9, length.out = p)
+  alpha <- matrix(0, nrow = 1, ncol = p,
+                  dimnames = list(NULL, variant_ids))
+  alpha[1, ] <- pip / sum(pip)
+  mu <- matrix(0.5, nrow = 1, ncol = p,
+               dimnames = list(NULL, variant_ids))
+  mu2 <- mu^2 + 0.1
+  fit <- list(pip = setNames(pip, variant_ids), alpha = alpha,
+              mu = mu, mu2 = mu2)
+  purity_df <- data.frame(min.abs.corr = cs_purity_value,
+                          mean.abs.corr = cs_purity_value,
+                          median.abs.corr = cs_purity_value)
+  cs_table <- list(
+    sets = list(cs = list(L1 = cs_membership),
+                cs_index = 1L,
+                requested_coverage = 0.95,
+                purity = purity_df),
+    cs_corr = list(matrix(c(1, cs_purity_value, cs_purity_value, 1),
+                          nrow = 2)),
+    pip = fit$pip
+  )
+  cs_tables <- list(cs_table)
+  attr(cs_tables, "coverage") <- 0.95
+  X <- matrix(0, nrow = n_samples, ncol = n_variants)
+  rownames(X) <- paste0("sample", seq_len(n_samples))
+  if (n_variants == length(variant_ids)) colnames(X) <- variant_ids
+  Y <- matrix(0, nrow = n_samples, ncol = 1,
+              dimnames = list(paste0("sample", seq_len(n_samples)),
+                              "ENSG00000179403"))
+  list(fit = fit, cs_tables = cs_tables, variant_names = variant_ids,
+       data_x = X, data_y = Y)
+}
+
+test_that("build_top_loci_long emits annotated columns from fit + cs_tables", {
+  variant_ids <- c("chr1:100:A:G", "chr1:200:C:T")
+  inp <- .make_fake_inputs_for_annotated_long(variant_ids,
+                                              cs_membership = c(1L, 2L))
+  long <- pecotmr:::build_top_loci_long(
+    fit = inp$fit, cs_tables = inp$cs_tables,
+    variant_names = inp$variant_names,
+    sumstats = list(betahat = c(0.2, -0.1),
+                    sebetahat = c(0.05, 0.04),
+                    z = c(4, -2.5)),
+    maf = c(0.10, 0.25), method = "susie", signal_cutoff = 0.05
+  )
+  expect_true(all(c("conditional_effect", "conditional_effect_se",
+                    "cs_purity") %in% names(long)))
+  expect_equal(length(unique(long$cs_purity)), 1L)
+  expect_equal(round(unique(long$cs_purity), 3), 0.85)
+  expect_true(all(is.finite(long$conditional_effect)))
+  expect_true(all(long$conditional_effect_se >= 0))
+})
+
+test_that("build_top_loci_long writes per-fit constants from data_x/data_y/other_quantities", {
+  variant_ids <- c("chr1:100:A:G", "chr1:200:C:T")
+  inp <- .make_fake_inputs_for_annotated_long(variant_ids,
+                                              cs_membership = c(1L, 2L),
+                                              n_samples = 419,
+                                              n_variants = 11332)
+  other_q <- list(
+    dropped_samples = list(X = character(), y = character()),
+    region          = "chr10:10823338-14348298",
+    condition_id    = "Ast_DeJager_eQTL"
+  )
+  long <- pecotmr:::build_top_loci_long(
+    fit = inp$fit, cs_tables = inp$cs_tables,
+    variant_names = inp$variant_names,
+    sumstats = list(betahat = c(0.2, -0.1),
+                    sebetahat = c(0.05, 0.04),
+                    z = c(4, -2.5)),
+    maf = c(0.10, 0.25), method = "susie", signal_cutoff = 0.05,
+    data_x = inp$data_x, data_y = inp$data_y, other_quantities = other_q
+  )
+  expect_equal(unique(long$n), 419L)
+  expect_equal(unique(long$variant_number), 11332L)
+  expect_equal(unique(long$gene_id), "ENSG00000179403")
+  expect_equal(unique(long$region), "chr10:10823338-14348298")
+  expect_equal(unique(long$event_ID), "Ast_DeJager_eQTL_ENSG00000179403")
+})
+
+test_that("build_top_loci_long omits region/event_ID columns when caller does not supply them", {
+  variant_ids <- c("chr1:100:A:G")
+  inp <- .make_fake_inputs_for_annotated_long(variant_ids,
+                                              cs_membership = 1L)
+  long <- pecotmr:::build_top_loci_long(
+    fit = inp$fit, cs_tables = inp$cs_tables,
+    variant_names = inp$variant_names,
+    sumstats = list(betahat = 0.2, sebetahat = 0.05, z = 4),
+    maf = 0.10, method = "susie", signal_cutoff = 0.05,
+    data_x = inp$data_x, data_y = inp$data_y, other_quantities = NULL
+  )
+  expect_false("region" %in% names(long))
+  expect_false("event_ID" %in% names(long))
+  expect_true("n" %in% names(long))
+  expect_true("variant_number" %in% names(long))
+  expect_true("gene_id" %in% names(long))
+})
+
+test_that("build_top_loci_long stays backward-compatible when data_x/data_y/other_quantities are omitted", {
+  variant_ids <- c("chr1:100:A:G", "chr1:200:C:T")
+  inp <- .make_fake_inputs_for_annotated_long(variant_ids,
+                                              cs_membership = c(1L, 2L))
+  long <- pecotmr:::build_top_loci_long(
+    fit = inp$fit, cs_tables = inp$cs_tables,
+    variant_names = inp$variant_names,
+    sumstats = list(betahat = c(0.2, -0.1),
+                    sebetahat = c(0.05, 0.04),
+                    z = c(4, -2.5)),
+    maf = c(0.10, 0.25), method = "susie", signal_cutoff = 0.05
+  )
+  # n / variant_number / gene_id columns exist but are NA because no
+  # data_x / data_y were supplied; region / event_ID are omitted entirely.
+  expect_true(all(is.na(long$n)))
+  expect_true(all(is.na(long$variant_number)))
+  expect_true(all(is.na(long$gene_id)))
+  expect_false("region" %in% names(long))
+  expect_false("event_ID" %in% names(long))
+})
+
+test_that("build_top_loci_export errors when required columns are missing", {
+  bad <- data.frame(variant_id = "chr1:100:A:G", pip = 0.9,
+                    coverage = 0.95, cs = 1L,
+                    stringsAsFactors = FALSE)
+  expect_error(build_top_loci_export(bad),
+               "missing required columns")
+})
+
+test_that("build_top_loci_export returns the fixed 21-column schema on an empty long", {
+  empty <- pecotmr:::.empty_top_loci_long()
+  out <- build_top_loci_export(empty)
+  expected <- c("#chr", "start", "end", "a1", "a2", "variant_ID", "gene_ID",
+                "event_ID", "cs_coverage_0.95", "cs_coverage_0.7",
+                "cs_coverage_0.5", "cs_purity", "PIP", "conditional_effect",
+                "conditional_effect_se", "analysis_region",
+                "analysis_variants_number", "beta", "se", "n", "maf")
+  expect_equal(names(out), expected)
+  expect_equal(nrow(out), 0L)
+})
+
+test_that("build_top_loci_export projects an annotated long into the fixed compact schema", {
+  variant_ids <- c("chr1:100:A:G", "chr1:200:C:T")
+  inp <- .make_fake_inputs_for_annotated_long(variant_ids,
+                                              cs_membership = c(1L, 2L),
+                                              n_samples = 419,
+                                              n_variants = 11332)
+  other_q <- list(region = "chr10:10823338-14348298",
+                  condition_id = "Ast_DeJager_eQTL")
+  long <- pecotmr:::build_top_loci_long(
+    fit = inp$fit, cs_tables = inp$cs_tables,
+    variant_names = inp$variant_names,
+    sumstats = list(betahat = c(0.2, -0.1),
+                    sebetahat = c(0.05, 0.04),
+                    z = c(4, -2.5)),
+    maf = c(0.10, 0.25), method = "susie", signal_cutoff = 0.05,
+    data_x = inp$data_x, data_y = inp$data_y, other_quantities = other_q
+  )
+  out <- build_top_loci_export(long)
+  expected_cols <- c("#chr", "start", "end", "a1", "a2", "variant_ID",
+                     "gene_ID", "event_ID", "cs_coverage_0.95",
+                     "cs_coverage_0.7", "cs_coverage_0.5", "cs_purity",
+                     "PIP", "conditional_effect", "conditional_effect_se",
+                     "analysis_region", "analysis_variants_number",
+                     "beta", "se", "n", "maf")
+  expect_equal(names(out), expected_cols)
+  expect_equal(out$gene_ID[[1]], "ENSG00000179403")
+  expect_equal(out$event_ID[[1]], "Ast_DeJager_eQTL_ENSG00000179403")
+  expect_equal(out$analysis_region[[1]], "chr10:10823338-14348298")
+  expect_equal(out$analysis_variants_number[[1]], 11332L)
+  expect_equal(out$n[[1]], 419L)
+})
