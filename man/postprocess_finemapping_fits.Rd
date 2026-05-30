@@ -15,6 +15,7 @@ postprocess_finemapping_fits(
   secondary_coverage = c(0.7, 0.5),
   signal_cutoff = 0.1,
   other_quantities = NULL,
+  region = NULL,
   prior_eff_tol = 1e-09,
   min_abs_corr = 0.8
 )

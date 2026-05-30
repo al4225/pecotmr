@@ -12,6 +12,7 @@ univariate_analysis_pipeline(
   Y_scalar = 1,
   X_variance = NULL,
   other_quantities = list(),
+  region = NULL,
   imiss_cutoff = 1,
   maf_cutoff = NULL,
   xvar_cutoff = 0,
@@ -46,6 +47,8 @@ univariate_analysis_pipeline(
 \item{X_variance}{Optional variance of X. Default is NULL.}
 
 \item{other_quantities}{A list of other quantities to be carried into fine-mapping post-processing. Default is an empty list.}
+
+\item{region}{Optional \code{"chr:start-end"} string for the analysis region. Default is NULL.}
 
 \item{imiss_cutoff}{Individual missingness cutoff. Default is 1.0.}
 

@@ -14,7 +14,8 @@ build_top_loci(
   signal_cutoff = 0.1,
   data_x = NULL,
   data_y = NULL,
-  other_quantities = NULL
+  other_quantities = NULL,
+  region = NULL
 )
 }
 \arguments{
@@ -41,9 +42,9 @@ build_top_loci(
 \item{data_y}{Optional regional phenotype matrix; \code{nrow(data_y)} fills
 \code{n}, \code{colnames(data_y)[1]} fills \code{gene}.}
 
-\item{other_quantities}{Optional list with reserved subfields \code{region}
-(filling \code{grange_start} / \code{grange_end}) and \code{condition_id}
-(composing \code{event} as \code{paste(condition_id, gene, sep = "_")}).}
+\item{other_quantities}{Optional list. Default is NULL.}
+
+\item{region}{Optional \code{"chr:start-end"} string. Default is NULL.}
 }
 \value{
 A data frame in the fixed 22-column shape for this fit and method,
