@@ -890,14 +890,16 @@ if (!exists(".make_univariate_data", inherits = FALSE)) {
 
 .run_build_top_loci <- function(inp, method = "susie", signal_cutoff = 0.05,
                                 sumstats = NULL, maf = NULL,
-                                other_quantities = NULL) {
+                                other_quantities = NULL,
+                                region = NULL) {
   build_top_loci(
     fit = inp$fit, cs_tables = inp$cs_tables,
     variant_names = inp$variant_names,
     sumstats = sumstats, maf = maf,
     method = method, signal_cutoff = signal_cutoff,
     data_x = inp$data_x, data_y = inp$data_y,
-    other_quantities = other_quantities
+    other_quantities = other_quantities,
+    region = region
   )
 }
 
@@ -940,13 +942,13 @@ test_that("build_top_loci emits 22 columns in the fixed order on a non-empty fit
                                             "0.7"  = list(c(1L, 2L)),
                                             "0.5"  = list(c(1L, 2L))),
                           n_samples = 419, n_variants = 11332)
-  other_q <- list(region = "chr10:10823338-14348298",
-                  condition_id = "Ast_DeJager_eQTL")
+  other_q <- list(condition_id = "Ast_DeJager_eQTL")
   out <- .run_build_top_loci(inp, method = "susie",
                              sumstats = list(betahat = c(0.2, -0.1),
                                              sebetahat = c(0.05, 0.04)),
                              maf = c(0.10, 0.25),
-                             other_quantities = other_q)
+                             other_quantities = other_q,
+                             region = "chr10:10823338-14348298")
   expect_equal(names(out), .UNIFIED_TOP_LOCI_COLS)
   expect_equal(unique(out$gene), "ENSG00000179403")
   expect_equal(unique(out$event), "Ast_DeJager_eQTL_ENSG00000179403")
@@ -1161,7 +1163,7 @@ test_that("non-top-loci wrapper fields (susie_result_trimmed, variant_names) are
   expect_true("variant_names" %in% names(out))
 })
 
-test_that("missing other_quantities$region produces NA grange columns rather than silent omission", {
+test_that("missing region produces NA grange columns rather than silent omission", {
   variant_ids <- c("chr1:100:A:G")
   cs_at_cov <- list("0.95" = list(1L),
                     "0.7"  = list(1L),

@@ -77,8 +77,8 @@ The unified `top_loci` table has exactly these columns, in this order:
 | 18 | `cs_50`                 | character | per-row CS membership at coverage 0.50                           |
 | 19 | `cs_95_purity`          | numeric   | 0.95-coverage CS purity for this row (see below)                 |
 | 20 | `method`                | character | `"susie"`, `"susie_inf"`, ...                                    |
-| 21 | `grange_start`          | integer   | parsed from `other_quantities$region`                            |
-| 22 | `grange_end`            | integer   | parsed from `other_quantities$region`                            |
+| 21 | `grange_start`          | integer   | parsed from top-level `region` arg                               |
+| 22 | `grange_end`            | integer   | parsed from top-level `region` arg                               |
 
 There are no `pip_<method>` or `CS_<cov>_<method>` wide-format columns, no
 `top_loci_long` column set (`variant_id` / `coverage` / `cs`), and no
@@ -140,22 +140,25 @@ in `susie`'s CS and `susie_inf`'s CS).
 
 # Caller responsibilities
 
-`build_top_loci()` reads per-fit metadata from `data_x`, `data_y`, and a
-reserved `other_quantities` list. The caller (typically
-`univariate_analysis_pipeline()` and through it the xqtl-protocol
-`susie_twas` block and the transMap finemapping pipeline) supplies:
+`build_top_loci()` reads per-fit metadata from `data_x`, `data_y`, a
+reserved `other_quantities` list, and a top-level `region` argument. The
+caller (typically `univariate_analysis_pipeline()` and through it the
+xqtl-protocol `susie_twas` block and the transMap finemapping pipeline)
+supplies:
 
-| Field                          | Used for                            |
-|--------------------------------|-------------------------------------|
-| `data_y`                       | `n` and `gene` (column name)        |
-| `other_quantities$region`      | `grange_start`, `grange_end`        |
-| `other_quantities$condition_id`| `event` composition with `gene`     |
+| Field                            | Used for                            |
+|----------------------------------|-------------------------------------|
+| `data_y`                         | `n` and `gene` (column name)        |
+| `region` (top-level)             | `grange_start`, `grange_end` (parsed by `parse_region()`) |
+| `other_quantities$condition_id`  | `event` composition with `gene`     |
 
-If `other_quantities$region` is missing, `grange_start` and `grange_end`
-remain `NA` in the wrapper's output; transMap's
-`.transmap_finemap_top_loci_table()` then fills them from its own
-analysis-region metadata. If `other_quantities$condition_id` is missing,
-`event` falls back to `NA_character_`.
+`region` is a top-level `"chr:start-end"` string argument of
+`univariate_analysis_pipeline()` (and `postprocess_finemapping_fits()` /
+`build_top_loci()`). When `region` is `NULL`, `grange_start` and
+`grange_end` are `NA`. If `other_quantities$condition_id` is missing,
+`event` falls back to `NA_character_`. `other_quantities` remains a
+free-form list (e.g. `dropped_samples` stays accepted); only
+`condition_id` is consumed by the unified export.
 
 # Worked example
 
@@ -178,19 +181,16 @@ Y <- matrix(y, ncol = 1, dimnames = list(NULL, "ENSG00000179403"))
 # fit_susie_inf_then_susie() is a pecotmr helper that returns both fits.
 fits <- fit_susie_inf_then_susie(X, y)
 
-# Caller-supplied per-fit metadata flows through other_quantities. The two
-# reserved subfields are documented contract for the unified export only;
-# other_quantities itself remains a free-form list (e.g. dropped_samples
-# stays accepted).
-oq <- list(
-  region       = "chr1:1-50",
-  condition_id = "ctx_eQTL"
-)
+# Caller-supplied per-fit metadata. `condition_id` flows through
+# other_quantities (which remains a free-form list); the analysis region
+# flows through `region`, a top-level argument.
+oq <- list(condition_id = "ctx_eQTL")
 
 post <- postprocess_finemapping_fits(
   fits, data_x = X, data_y = Y,
   coverage = 0.95, secondary_coverage = c(0.7, 0.5),
-  other_quantities = oq
+  other_quantities = oq,
+  region           = "chr1:1-50"
 )
 
 out <- format_finemapping_output(post, primary_method = "susie")

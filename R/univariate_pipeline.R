@@ -11,6 +11,7 @@
 #' @param maf A vector of minor allele frequencies for each variant in X.
 #' @param X_variance Optional variance of X. Default is NULL.
 #' @param other_quantities A list of other quantities to be carried into fine-mapping post-processing. Default is an empty list.
+#' @param region Optional \code{"chr:start-end"} string for the analysis region. Default is NULL.
 #' @param imiss_cutoff Individual missingness cutoff. Default is 1.0.
 #' @param maf_cutoff Minor allele frequency cutoff. Default is NULL.
 #' @param xvar_cutoff Variance cutoff for X. Default is 0.05.
@@ -47,6 +48,7 @@ univariate_analysis_pipeline <- function(
     Y_scalar = 1,
     X_variance = NULL,
     other_quantities = list(),
+    region = NULL,
     # filters
     imiss_cutoff = 1.0,
     maf_cutoff = NULL,
@@ -158,7 +160,8 @@ univariate_analysis_pipeline <- function(
     secondary_coverage = if (length(coverage) > 1) coverage[-1] else NULL,
     signal_cutoff = signal_cutoff,
     min_abs_corr = min_abs_corr,
-    other_quantities = other_quantities
+    other_quantities = other_quantities,
+    region = region
   )
   res <- c(res, format_finemapping_output(susie_post, primary_method = "susie"))
   if (!is.null(susie_post$finemapping_results$susie_inf)) {

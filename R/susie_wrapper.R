@@ -180,6 +180,7 @@ postprocess_finemapping_fits <- function(fits, data_x, data_y = NULL,
                                          secondary_coverage = c(0.7, 0.5),
                                          signal_cutoff = 0.1,
                                          other_quantities = NULL,
+                                         region = NULL,
                                          prior_eff_tol = 1e-9,
                                          min_abs_corr = 0.8) {
   fits <- fits[!vapply(fits, is.null, logical(1))]
@@ -198,6 +199,7 @@ postprocess_finemapping_fits <- function(fits, data_x, data_y = NULL,
       X_scalar = X_scalar, y_scalar = y_scalar, maf = maf,
       coverage = coverage, secondary_coverage = secondary_coverage,
       signal_cutoff = signal_cutoff, other_quantities = other_quantities,
+      region = region,
       prior_eff_tol = prior_eff_tol, min_abs_corr = min_abs_corr
     )
   })
@@ -257,6 +259,7 @@ postprocess_finemapping_fit.susiF <- function(fit, method = "fsusie", ...) {
                                                 secondary_coverage = c(0.7, 0.5),
                                                 signal_cutoff = 0.1,
                                                 other_quantities = NULL,
+                                                region = NULL,
                                                 prior_eff_tol = 1e-9,
                                                 min_abs_corr = 0.8,
                                                 cs_input = c("X", "Xcorr", "fsusie")) {
@@ -272,7 +275,8 @@ postprocess_finemapping_fit.susiF <- function(fit, method = "fsusie", ...) {
   top_loci <- build_top_loci(
     fit, cs_tables, variant_names = variant_names, sumstats = sumstats,
     maf = maf, method = method, signal_cutoff = signal_cutoff,
-    data_x = data_x, data_y = data_y, other_quantities = other_quantities
+    data_x = data_x, data_y = data_y, other_quantities = other_quantities,
+    region = region
   )
 
   trimmed <- trim_finemapping_fit(fit, effect_idx, method, cs_tables)
@@ -457,16 +461,16 @@ compute_cs_table <- function(fit, data_x, coverage, cs_input = c("X", "Xcorr", "
 #' @param data_x Optional regional genotype matrix.
 #' @param data_y Optional regional phenotype matrix; \code{nrow(data_y)} fills
 #'   \code{n}, \code{colnames(data_y)[1]} fills \code{gene}.
-#' @param other_quantities Optional list with reserved subfields \code{region}
-#'   (filling \code{grange_start} / \code{grange_end}) and \code{condition_id}
-#'   (composing \code{event} as \code{paste(condition_id, gene, sep = "_")}).
+#' @param other_quantities Optional list. Default is NULL.
+#' @param region Optional \code{"chr:start-end"} string. Default is NULL.
 #' @return A data frame in the fixed 22-column shape for this fit and method,
 #'   or an empty data frame if nothing is retained.
 #' @export
 build_top_loci <- function(fit, cs_tables, variant_names, sumstats = NULL,
                            maf = NULL, method, signal_cutoff = 0.1,
                            data_x = NULL, data_y = NULL,
-                           other_quantities = NULL) {
+                           other_quantities = NULL,
+                           region = NULL) {
   if (missing(method) || is.null(method) ||
       length(method) != 1L || is.na(method) || !nzchar(method)) {
     stop("build_top_loci: `method` is required (e.g. \"susie\", \"susie_inf\").")
@@ -485,7 +489,7 @@ build_top_loci <- function(fit, cs_tables, variant_names, sumstats = NULL,
                    !is.na(fit_gene) && nzchar(fit_gene)) {
     paste(other_quantities$condition_id, fit_gene, sep = "_")
   } else NA_character_
-  grange <- .parse_grange(other_quantities$region)
+  grange <- .parse_grange(region)
 
   # Per-variant posterior effect / SE, computed once across all variants.
   alpha <- as.matrix(fit$alpha)
