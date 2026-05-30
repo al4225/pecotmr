@@ -2,7 +2,7 @@
 % Please edit documentation in R/susie_wrapper.R
 \name{build_top_loci}
 \alias{build_top_loci}
-\title{Build the unified single top-loci table for one fit and one method.}
+\title{Build the unified top-loci table for one fit and one method.}
 \usage{
 build_top_loci(
   fit,
@@ -18,76 +18,58 @@ build_top_loci(
 )
 }
 \arguments{
-\item{fit}{A fitted SuSiE-family object (must expose \code{alpha},
+\item{fit}{Fitted SuSiE-family object (must expose \code{alpha},
 \code{mu}, \code{mu2}, \code{pip}).}
 
-\item{cs_tables}{A list of CS tables (one per coverage), as produced by
+\item{cs_tables}{List of CS tables (one per coverage) from
 \code{compute_cs_tables()}.}
 
-\item{variant_names}{Character vector of variant IDs in
-\code{chr:pos:A2:A1} form, length equal to the number of variants in the
-fit. Used to construct \code{variant}, \code{#chr}, \code{start},
-\code{end}, \code{a1}, \code{a2}.}
+\item{variant_names}{Character vector of variant IDs
+(\code{chr:pos:A2:A1}).}
 
-\item{sumstats}{Optional marginal-association summary statistics
-(\code{betahat}, \code{sebetahat}) used to fill \code{beta} and \code{se}.}
+\item{sumstats}{Optional marginal-association summary (\code{betahat},
+\code{sebetahat}) filling \code{beta} / \code{se}.}
 
 \item{maf}{Optional numeric vector of minor-allele frequencies.}
 
-\item{method}{Method name (e.g. \code{"susie"}, \code{"susie_inf"}). Used
-to construct the per-method \code{"<method>_<cs_index>"} strings and the
-\code{method} column. Required.}
+\item{method}{Method name (e.g. \code{"susie"}, \code{"susie_inf"}). Required.}
 
 \item{signal_cutoff}{PIP cutoff for retaining PIP-only (non-CS) variants.}
 
-\item{data_x}{Optional regional genotype matrix; used only for sample-count
-shape checks.}
+\item{data_x}{Optional regional genotype matrix.}
 
 \item{data_y}{Optional regional phenotype matrix; \code{nrow(data_y)} fills
 \code{n}, \code{colnames(data_y)[1]} fills \code{gene}.}
 
-\item{other_quantities}{Optional list with reserved subfields
-\code{region} (e.g. \code{"chr1:100-200"}) and \code{condition_id}
-(e.g. \code{"Ast_DeJager_eQTL"}); used to fill \code{grange_start},
-\code{grange_end}, and to compose \code{event} as
-\code{paste(condition_id, gene, sep = "_")}. Missing subfields are
-filled with \code{NA} rather than dropped.}
+\item{other_quantities}{Optional list with reserved subfields \code{region}
+(filling \code{grange_start} / \code{grange_end}) and \code{condition_id}
+(composing \code{event} as \code{paste(condition_id, gene, sep = "_")}).}
 }
 \value{
-A data frame in the fixed 22-column unified \code{top_loci} shape
-  for this one fit and one method. Returns an empty data frame with the
-  correct columns and dtypes if there is nothing to retain.
+A data frame in the fixed 22-column shape for this fit and method,
+  or an empty data frame if nothing is retained.
 }
 \description{
-Produces the per-fit, per-method contribution to the unified \code{top_loci}
-table in the fixed 22-column shape. The outer
-\code{postprocess_finemapping_fits()} loop calls this once per method per fit
-and row-binds the results into the single final \code{top_loci} table that is
-exposed by \code{format_finemapping_output()}.
+Returns the per-fit, per-method contribution to the unified \code{top_loci}
+table in the fixed 22-column shape. \code{postprocess_finemapping_fits()}
+calls this once per method per fit and row-binds the results into the
+single \code{top_loci} returned by \code{format_finemapping_output()}.
 }
 \details{
-This function replaces the previous \code{build_top_loci_long()},
-\code{build_top_loci_wide()}, and \code{build_top_loci_export()} trio.
-There is no separately exposed long or wide table.
+Output columns, in order: \code{#chr}, \code{start}, \code{end}, \code{a1},
+\code{a2}, \code{variant}, \code{gene}, \code{event}, \code{n}, \code{maf},
+\code{beta}, \code{se}, \code{pip}, \code{posterior_effect_mean},
+\code{posterior_effect_se}, \code{cs_95}, \code{cs_70}, \code{cs_50},
+\code{cs_95_purity}, \code{method}, \code{grange_start}, \code{grange_end}.
 
-The output column order is exactly (22 columns):
-\code{#chr}, \code{start}, \code{end}, \code{a1}, \code{a2},
-\code{variant}, \code{gene}, \code{event},
-\code{n}, \code{maf}, \code{beta}, \code{se},
-\code{pip}, \code{posterior_effect_mean}, \code{posterior_effect_se},
-\code{cs_95}, \code{cs_70}, \code{cs_50}, \code{cs_95_purity},
-\code{method}, \code{grange_start}, \code{grange_end}.
+\code{cs_95} / \code{cs_70} / \code{cs_50} are character strings of the
+form \code{"<method>_<cs_index>"} where each method numbers credible sets
+independently from 1. Variants retained by the PIP cutoff but not in any
+credible set at a coverage carry \code{"<method>_0"}. \code{cs_95_purity}
+is the 0.95-coverage purity for the row's \code{(method, cs_95)}; rows
+whose \code{cs_95} is \code{"<method>_0"} carry \code{0}.
 
-The \code{cs_95}, \code{cs_70}, \code{cs_50} columns are character strings of
-the form \code{"<method>_<cs_index>"} where each method numbers its credible
-sets independently starting at 1. Variants retained by the PIP cutoff but not
-assigned to any credible set at the given coverage use \code{"<method>_0"}.
-\code{cs_95_purity} is the 0.95-coverage credible-set purity for the row's
-\code{(method, cs_95)}; rows whose \code{cs_95} is \code{"<method>_0"} carry
-\code{cs_95_purity = 0}.
-
-Row uniqueness inside this function's output is one row per
-\code{(variant, gene, cs_membership)} at the given \code{method}. Overlapping
-credible-set membership for the same method produces one row per CS, so the
-overlapping-CS contract is preserved.
+Row uniqueness is \code{(variant, gene, cs_membership)} at the given
+\code{method}; overlapping CS within the same method produces one row per
+CS.
 }
