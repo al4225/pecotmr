@@ -258,9 +258,10 @@ test_that("susie_rss_pipeline runs with single_effect method", {
   expect_true(is.list(result))
   expect_true("variant_names" %in% names(result))
   expect_true("susie_result_trimmed" %in% names(result))
-  if (!is.null(result$top_loci)) {
-    expect_true("pip_single_effect" %in% names(result$top_loci))
-    expect_true("CS_95_single_effect" %in% names(result$top_loci))
+  if (!is.null(result$top_loci) && nrow(result$top_loci) > 0) {
+    expect_true("pip"   %in% names(result$top_loci))
+    expect_true("cs_95" %in% names(result$top_loci))
+    expect_true(all(result$top_loci$method == "single_effect"))
   }
   # PIPs should be numeric, in [0,1], and sum to at most 1 (L=1)
   pip <- result$susie_result_trimmed$pip
@@ -293,9 +294,10 @@ test_that("susie_rss_pipeline runs with bayesian_conditional_regression", {
   )
   expect_true(is.list(result))
   expect_true("susie_result_trimmed" %in% names(result))
-  if (!is.null(result$top_loci)) {
-    expect_true("pip_bayesian_conditional_regression" %in% names(result$top_loci))
-    expect_true("CS_95_bayesian_conditional_regression" %in% names(result$top_loci))
+  if (!is.null(result$top_loci) && nrow(result$top_loci) > 0) {
+    expect_true("pip"   %in% names(result$top_loci))
+    expect_true("cs_95" %in% names(result$top_loci))
+    expect_true(all(result$top_loci$method == "bayesian_conditional_regression"))
   }
   pip <- result$susie_result_trimmed$pip
   expect_true(is.numeric(pip))
