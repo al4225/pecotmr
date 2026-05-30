@@ -267,8 +267,6 @@ postprocess_finemapping_fit.susiF <- function(fit, method = "fsusie", ...) {
   )
 
   trimmed <- trim_finemapping_fit(fit, effect_idx, method, cs_tables)
-  trimmed$X_scalar <- X_scalar
-  trimmed$y_scalar <- y_scalar
 
   # Build FineMappingResult S4 object
   fm_result <- FineMappingResult(
@@ -493,186 +491,6 @@ build_top_loci_wide <- function(top_loci_long, posts) {
   out
 }
 
-build_top_loci_export <- function(top_loci, top_loci_long = NULL,
-                                  primary_method = "susie",
-                                  result_trimmed = NULL,
-                                  variant_names = NULL,
-                                  gene_id = NA_character_,
-                                  event_id = NA_character_,
-                                  n = NA_real_, af = NULL) {
-  empty <- function() {
-    data.frame(
-      "#chr" = integer(), start = integer(), end = integer(),
-      a1 = character(), a2 = character(), variant_ID = character(),
-      gene_ID = character(), event_ID = character(),
-      "cs_coverage_0.95" = integer(), "cs_coverage_0.7" = integer(),
-      "cs_coverage_0.5" = integer(), PIP = numeric(),
-      conditional_effect = numeric(), conditional_effect_se = numeric(),
-      beta = numeric(), se = numeric(), n = numeric(), af = numeric(),
-      stringsAsFactors = FALSE, check.names = FALSE
-    )
-  }
-  if (is.null(top_loci) || !is.data.frame(top_loci) || nrow(top_loci) == 0) {
-    return(empty())
-  }
-
-  top_loci <- .translate_legacy_top_loci_cs_columns(top_loci)
-  variant_col <- intersect(c("variant_ID", "variant_id"), names(top_loci))
-  if (length(variant_col) == 0) stop("top_loci is missing variant_id or variant_ID.")
-  variant_id <- as.character(top_loci[[variant_col[[1]]]])
-  n_rows <- length(variant_id)
-
-  match_numeric <- function(value) {
-    out <- rep(NA_real_, n_rows)
-    if (is.null(value) || length(value) == 0) return(out)
-    value_names <- names(value)
-    value <- suppressWarnings(as.numeric(value))
-    if (!is.null(value_names) && length(value_names) == length(value)) {
-      names(value) <- value_names
-    }
-    if (!is.null(names(value))) {
-      query <- tryCatch(normalize_variant_id(variant_id), error = function(e) variant_id)
-      names(value) <- tryCatch(normalize_variant_id(names(value)), error = function(e) names(value))
-      return(as.numeric(value[query]))
-    }
-    if (length(value) == 1) return(rep(value, n_rows))
-    if (length(value) == n_rows) return(value)
-    out
-  }
-  column_numeric <- function(columns) {
-    hit <- intersect(columns, names(top_loci))
-    if (length(hit) == 0) return(rep(NA_real_, n_rows))
-    suppressWarnings(as.numeric(top_loci[[hit[[1]]]]))
-  }
-  cs_column <- function(coverage) {
-    hit <- intersect(format_cs_column(coverage, primary_method), names(top_loci))
-    if (length(hit) > 0) return(as.integer(top_loci[[hit[[1]]]]))
-    if (any(grepl("^CS_[0-9.]+_[A-Za-z0-9_.-]+$", names(top_loci)))) {
-      return(rep(0L, n_rows))
-    }
-    rep(NA_integer_, n_rows)
-  }
-  scale_effect <- function(value) {
-    if (is.null(value) || is.null(result_trimmed)) return(value)
-    y_scalar <- suppressWarnings(as.numeric(result_trimmed$y_scalar %||% 1))
-    if (length(y_scalar) != 1 || !is.finite(y_scalar)) y_scalar <- 1
-    x_scalar <- result_trimmed$X_scalar
-    if (is.null(x_scalar)) return(value * y_scalar)
-    if (length(x_scalar) == 1) {
-      x_scalar <- rep(as.numeric(x_scalar), length(value))
-    } else if (is.null(names(x_scalar)) && !is.null(names(value)) &&
-               length(x_scalar) == length(value)) {
-      names(x_scalar) <- names(value)
-    }
-    if (!is.null(names(value)) && !is.null(names(x_scalar))) {
-      query <- tryCatch(normalize_variant_id(names(value)), error = function(e) names(value))
-      names(x_scalar) <- tryCatch(normalize_variant_id(names(x_scalar)),
-                                  error = function(e) names(x_scalar))
-      x_scalar <- as.numeric(x_scalar[query])
-    } else if (length(x_scalar) != length(value)) {
-      x_scalar <- rep(NA_real_, length(value))
-    }
-    ok <- is.finite(value) & is.finite(x_scalar) & x_scalar != 0
-    value[ok] <- value[ok] * y_scalar / x_scalar[ok]
-    value
-  }
-
-  parsed <- tryCatch(
-    suppressWarnings(parse_variant_id(variant_id)),
-    error = function(e) NULL
-  )
-  if (is.null(parsed) || nrow(parsed) != n_rows) {
-    parsed <- data.frame(
-      chrom = rep(NA_integer_, n_rows), pos = rep(NA_integer_, n_rows),
-      A2 = rep(NA_character_, n_rows), A1 = rep(NA_character_, n_rows),
-      stringsAsFactors = FALSE
-    )
-  }
-
-  pip_col <- resolve_pip_column(top_loci, primary_method)
-  effect <- effect_se <- rep(NA_real_, n_rows)
-  if (!is.null(result_trimmed)) {
-    names_from_fit <- variant_names %||% names(result_trimmed$pip) %||%
-      colnames(result_trimmed$alpha)
-    effect <- tryCatch(susieR::coef.susie(result_trimmed), error = function(e) NULL)
-    effect_se <- tryCatch(susieR::susie_get_posterior_sd(result_trimmed),
-                          error = function(e) NULL)
-    if (!is.null(effect)) {
-      if (!is.null(names_from_fit) && length(names_from_fit) == length(effect)) {
-        names(effect) <- names_from_fit
-      }
-      effect <- match_numeric(scale_effect(effect))
-    } else {
-      effect <- rep(NA_real_, n_rows)
-    }
-    if (!is.null(effect_se)) {
-      if (!is.null(names_from_fit) && length(names_from_fit) == length(effect_se)) {
-        names(effect_se) <- names_from_fit
-      }
-      effect_se <- match_numeric(abs(scale_effect(effect_se)))
-    } else {
-      effect_se <- rep(NA_real_, n_rows)
-    }
-  }
-
-  out <- data.frame(
-    "#chr" = parsed$chrom,
-    start = parsed$pos - 1L,
-    end = parsed$pos,
-    a1 = parsed$A1,
-    a2 = parsed$A2,
-    variant_ID = variant_id,
-    gene_ID = rep(gene_id, length.out = n_rows),
-    event_ID = rep(event_id, length.out = n_rows),
-    "cs_coverage_0.95" = cs_column(0.95),
-    "cs_coverage_0.7" = cs_column(0.7),
-    "cs_coverage_0.5" = cs_column(0.5),
-    PIP = if (is.null(pip_col)) rep(NA_real_, n_rows) else as.numeric(top_loci[[pip_col]]),
-    conditional_effect = effect,
-    conditional_effect_se = effect_se,
-    beta = column_numeric(c("beta", "betahat")),
-    se = column_numeric(c("se", "sebetahat")),
-    n = if (any(!is.na(column_numeric("n")))) column_numeric("n") else match_numeric(n),
-    af = if (any(!is.na(column_numeric("af")))) column_numeric("af") else match_numeric(af),
-    stringsAsFactors = FALSE,
-    check.names = FALSE
-  )
-
-  if (is.null(top_loci_long) || !is.data.frame(top_loci_long) ||
-      nrow(top_loci_long) == 0 || !all(c("variant_id", "method", "coverage", "cs") %in%
-                                       names(top_loci_long))) {
-    return(out)
-  }
-  coverage_columns <- c("0.95" = "cs_coverage_0.95",
-                        "0.7" = "cs_coverage_0.7",
-                        "0.5" = "cs_coverage_0.5")
-  rows <- lapply(seq_len(nrow(out)), function(i) {
-    row <- out[i, , drop = FALSE]
-    memberships <- lapply(names(coverage_columns), function(coverage) {
-      hits <- top_loci_long[
-        as.character(top_loci_long$variant_id) == row$variant_ID[[1]] &
-          as.character(top_loci_long$method) == primary_method &
-          abs(as.numeric(top_loci_long$coverage) - as.numeric(coverage)) < 1e-8,
-        , drop = FALSE
-      ]
-      unique(as.integer(hits$cs[!is.na(hits$cs)]))
-    })
-    names(memberships) <- coverage_columns
-    n_membership <- max(1L, vapply(memberships, length, integer(1)))
-    do.call(rbind, lapply(seq_len(n_membership), function(j) {
-      expanded <- row
-      for (column in names(memberships)) {
-        values <- memberships[[column]]
-        if (length(values) > 0) expanded[[column]] <- values[[min(j, length(values))]]
-      }
-      expanded
-    }))
-  })
-  out <- do.call(rbind, rows)
-  rownames(out) <- NULL
-  out
-}
-
 trim_finemapping_fit <- function(fit, effect_idx, method, cs_tables) {
   alpha <- .as_effect_matrix(fit$alpha)
   lbf_variable <- .as_lbf_matrix(fit)
@@ -728,29 +546,20 @@ trim_finemapping_fit <- function(fit, effect_idx, method, cs_tables) {
 #' @param post Output from \code{\link{postprocess_finemapping_fits}}.
 #' @param primary_method Method whose result should populate root-level fields.
 #' @return A list with root-level fields including \code{variant_names},
-#'   \code{susie_result_trimmed}, \code{top_loci_long}, \code{top_loci},
-#'   and the exported table \code{top_loci_export}.
+#'   \code{susie_result_trimmed}, \code{top_loci_long}, and \code{top_loci}.
 #' @export
 format_finemapping_output <- function(post, primary_method) {
   method_post <- post$finemapping_results[[primary_method]]
   if (is.null(method_post)) {
     stop("primary_method was not found in finemapping_results: ", primary_method)
   }
-  top_loci_export <- build_top_loci_export(
-    top_loci = post$top_loci,
-    top_loci_long = post$top_loci_long,
-    primary_method = primary_method,
-    result_trimmed = method_post$result_trimmed,
-    variant_names = method_post$variant_names
-  )
   keep_names <- setdiff(names(method_post), c("result_trimmed", "top_loci_long"))
   c(
     method_post[keep_names],
     list(
       susie_result_trimmed = method_post$result_trimmed,
       top_loci_long = post$top_loci_long,
-      top_loci = post$top_loci,
-      top_loci_export = top_loci_export
+      top_loci = post$top_loci
     )
   )
 }
