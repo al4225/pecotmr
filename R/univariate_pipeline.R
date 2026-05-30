@@ -1,8 +1,8 @@
 #' Univariate Analysis Pipeline
 #'
 #' This function performs univariate analysis for fine-mapping and Transcriptome-Wide Association Study (TWAS)
-#' with optional cross-validation. Fine-mapping fits SuSiE-inf first and then
-#' fits SuSiE initialized from the SuSiE-inf result.
+#' with optional cross-validation. By default, fine-mapping fits SuSiE-inf first
+#' and then fits SuSiE initialized from the SuSiE-inf result.
 #'
 #' @param X A matrix of genotype data where rows represent samples and columns represent genetic variants.
 #' @param Y A vector of phenotype measurements.
@@ -25,6 +25,9 @@
 #' @param finemapping_extra_opts Additional options passed to \code{susieR::susie()}.
 #'   SuSiE-inf is always fitted with \code{refine = FALSE}; the ordinary SuSiE
 #'   fit keeps these options and is initialized with \code{model_init}.
+#' @param fit_susie_inf Whether to fit SuSiE-inf before ordinary SuSiE. Default
+#'   is TRUE for existing pipeline compatibility. If FALSE, ordinary SuSiE is
+#'   fitted directly and SuSiE-inf fitted objects/results are not returned.
 #' @param twas_weights Whether to compute TWAS weights. Default is TRUE.
 #' @param sample_partition Optional data frame with Sample and Fold columns for cross-validation. Default is NULL.
 #' @param max_cv_variants The maximum number of variants to be included in cross-validation. Default is -1 (no limit).
@@ -58,6 +61,7 @@ univariate_analysis_pipeline <- function(
     coverage = c(0.95, 0.7, 0.5),
     min_abs_corr = 0.8,
     finemapping_extra_opts = list(refine = TRUE),
+    fit_susie_inf = TRUE,
     # TWAS weights and CV for TWAS weights
     twas_weights = TRUE,
     sample_partition = NULL,
@@ -75,6 +79,12 @@ univariate_analysis_pipeline <- function(
   if (!is.numeric(Y_scalar) || length(Y_scalar) != 1) stop("Y_scalar must be a numeric scalar")
   if (!is.numeric(L) || L <= 0) stop("L must be a positive integer")
   if (!is.null(L_greedy) && (!is.numeric(L_greedy) || L_greedy <= 0)) stop("L_greedy must be NULL or a positive integer")
+  if (!is.logical(fit_susie_inf) || length(fit_susie_inf) != 1 || is.na(fit_susie_inf)) {
+    stop("fit_susie_inf must be TRUE or FALSE")
+  }
+  if (!isTRUE(fit_susie_inf) && isTRUE(twas_weights)) {
+    stop("fit_susie_inf = FALSE is not compatible with twas_weights = TRUE")
+  }
 
   # Initial PIP check
   if (pip_cutoff_to_skip != 0) {
@@ -112,17 +122,28 @@ univariate_analysis_pipeline <- function(
   st <- proc.time()
   res <- list()
 
-  message("Fitting SuSiE-inf model on input data ...")
-  message("Fitting SuSiE model initialized by SuSiE-inf ...")
-  fitted_models <- fit_susie_inf_then_susie(
-    X,
-    Y,
-    args = modifyList(
-      finemapping_extra_opts,
-      list(L = L, L_greedy = L_greedy, coverage = coverage[1])
-    )
+  susie_args <- modifyList(
+    finemapping_extra_opts,
+    list(L = L, L_greedy = L_greedy, coverage = coverage[1])
   )
-  res$susie_inf_fitted <- fitted_models[["susie_inf"]]
+  if (isTRUE(fit_susie_inf)) {
+    message("Fitting SuSiE-inf model on input data ...")
+    message("Fitting SuSiE model initialized by SuSiE-inf ...")
+    fitted_models <- fit_susie_inf_then_susie(
+      X,
+      Y,
+      args = susie_args
+    )
+    res$susie_inf_fitted <- fitted_models[["susie_inf"]]
+  } else {
+    message("Fitting SuSiE model on input data ...")
+    fitted_models <- list(
+      susie = .set_finemapping_fit_class(
+        do.call(susie, c(list(X = X, y = Y), susie_args)),
+        "susie"
+      )
+    )
+  }
   res$susie_fitted <- fitted_models[["susie"]]
 
   # Process SuSiE results
@@ -140,7 +161,9 @@ univariate_analysis_pipeline <- function(
     other_quantities = other_quantities
   )
   res <- c(res, format_finemapping_output(susie_post, primary_method = "susie"))
-  res$susie_inf_result_trimmed <- susie_post$finemapping_results$susie_inf$result_trimmed
+  if (!is.null(susie_post$finemapping_results$susie_inf)) {
+    res$susie_inf_result_trimmed <- susie_post$finemapping_results$susie_inf$result_trimmed
+  }
   res$total_time_elapsed <- proc.time() - st
 
   # TWAS weights and cross-validation
