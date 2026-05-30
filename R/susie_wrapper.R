@@ -170,11 +170,9 @@ fit_susie_inf_then_susie <- function(X, y, args = list(),
 #' @param min_abs_corr Minimum absolute correlation for credible-set purity.
 #' @return A list with \code{finemapping_results} (per-method post-processed
 #'   objects, each carrying a trimmed fit and method-specific intermediates)
-#'   and the single unified \code{top_loci} table in the fixed 22-column
-#'   shape (see \code{\link{build_top_loci}}). Per-method contributions are
-#'   produced by \code{build_top_loci()} once per method and row-bound into
-#'   this single \code{top_loci}. There is no separately exposed
-#'   \code{top_loci_long} or wide-format \code{top_loci}.
+#'   and a single unified \code{top_loci} table in the fixed 22-column shape
+#'   (see \code{\link{build_top_loci}}). Per-method contributions are
+#'   row-bound into \code{top_loci} by an outer method for-loop.
 #' @export
 postprocess_finemapping_fits <- function(fits, data_x, data_y = NULL,
                                          X_scalar = 1, y_scalar = 1,
@@ -421,67 +419,49 @@ compute_cs_table <- function(fit, data_x, coverage, cs_input = c("X", "Xcorr", "
   out
 }
 
-#' Build the unified single top-loci table for one fit and one method.
+#' Build the unified top-loci table for one fit and one method.
 #'
-#' Produces the per-fit, per-method contribution to the unified \code{top_loci}
-#' table in the fixed 22-column shape. The outer
-#' \code{postprocess_finemapping_fits()} loop calls this once per method per fit
-#' and row-binds the results into the single final \code{top_loci} table that is
-#' exposed by \code{format_finemapping_output()}.
+#' Returns the per-fit, per-method contribution to the unified \code{top_loci}
+#' table in the fixed 22-column shape. \code{postprocess_finemapping_fits()}
+#' calls this once per method per fit and row-binds the results into the
+#' single \code{top_loci} returned by \code{format_finemapping_output()}.
 #'
-#' This function replaces the previous \code{build_top_loci_long()},
-#' \code{build_top_loci_wide()}, and \code{build_top_loci_export()} trio.
-#' There is no separately exposed long or wide table.
+#' Output columns, in order: \code{#chr}, \code{start}, \code{end}, \code{a1},
+#' \code{a2}, \code{variant}, \code{gene}, \code{event}, \code{n}, \code{maf},
+#' \code{beta}, \code{se}, \code{pip}, \code{posterior_effect_mean},
+#' \code{posterior_effect_se}, \code{cs_95}, \code{cs_70}, \code{cs_50},
+#' \code{cs_95_purity}, \code{method}, \code{grange_start}, \code{grange_end}.
 #'
-#' The output column order is exactly (22 columns):
-#' \code{#chr}, \code{start}, \code{end}, \code{a1}, \code{a2},
-#' \code{variant}, \code{gene}, \code{event},
-#' \code{n}, \code{maf}, \code{beta}, \code{se},
-#' \code{pip}, \code{posterior_effect_mean}, \code{posterior_effect_se},
-#' \code{cs_95}, \code{cs_70}, \code{cs_50}, \code{cs_95_purity},
-#' \code{method}, \code{grange_start}, \code{grange_end}.
+#' \code{cs_95} / \code{cs_70} / \code{cs_50} are character strings of the
+#' form \code{"<method>_<cs_index>"} where each method numbers credible sets
+#' independently from 1. Variants retained by the PIP cutoff but not in any
+#' credible set at a coverage carry \code{"<method>_0"}. \code{cs_95_purity}
+#' is the 0.95-coverage purity for the row's \code{(method, cs_95)}; rows
+#' whose \code{cs_95} is \code{"<method>_0"} carry \code{0}.
 #'
-#' The \code{cs_95}, \code{cs_70}, \code{cs_50} columns are character strings of
-#' the form \code{"<method>_<cs_index>"} where each method numbers its credible
-#' sets independently starting at 1. Variants retained by the PIP cutoff but not
-#' assigned to any credible set at the given coverage use \code{"<method>_0"}.
-#' \code{cs_95_purity} is the 0.95-coverage credible-set purity for the row's
-#' \code{(method, cs_95)}; rows whose \code{cs_95} is \code{"<method>_0"} carry
-#' \code{cs_95_purity = 0}.
+#' Row uniqueness is \code{(variant, gene, cs_membership)} at the given
+#' \code{method}; overlapping CS within the same method produces one row per
+#' CS.
 #'
-#' Row uniqueness inside this function's output is one row per
-#' \code{(variant, gene, cs_membership)} at the given \code{method}. Overlapping
-#' credible-set membership for the same method produces one row per CS, so the
-#' overlapping-CS contract is preserved.
-#'
-#' @param fit A fitted SuSiE-family object (must expose \code{alpha},
+#' @param fit Fitted SuSiE-family object (must expose \code{alpha},
 #'   \code{mu}, \code{mu2}, \code{pip}).
-#' @param cs_tables A list of CS tables (one per coverage), as produced by
+#' @param cs_tables List of CS tables (one per coverage) from
 #'   \code{compute_cs_tables()}.
-#' @param variant_names Character vector of variant IDs in
-#'   \code{chr:pos:A2:A1} form, length equal to the number of variants in the
-#'   fit. Used to construct \code{variant}, \code{#chr}, \code{start},
-#'   \code{end}, \code{a1}, \code{a2}.
-#' @param sumstats Optional marginal-association summary statistics
-#'   (\code{betahat}, \code{sebetahat}) used to fill \code{beta} and \code{se}.
+#' @param variant_names Character vector of variant IDs
+#'   (\code{chr:pos:A2:A1}).
+#' @param sumstats Optional marginal-association summary (\code{betahat},
+#'   \code{sebetahat}) filling \code{beta} / \code{se}.
 #' @param maf Optional numeric vector of minor-allele frequencies.
-#' @param method Method name (e.g. \code{"susie"}, \code{"susie_inf"}). Used
-#'   to construct the per-method \code{"<method>_<cs_index>"} strings and the
-#'   \code{method} column. Required.
+#' @param method Method name (e.g. \code{"susie"}, \code{"susie_inf"}). Required.
 #' @param signal_cutoff PIP cutoff for retaining PIP-only (non-CS) variants.
-#' @param data_x Optional regional genotype matrix; used only for sample-count
-#'   shape checks.
+#' @param data_x Optional regional genotype matrix.
 #' @param data_y Optional regional phenotype matrix; \code{nrow(data_y)} fills
 #'   \code{n}, \code{colnames(data_y)[1]} fills \code{gene}.
-#' @param other_quantities Optional list with reserved subfields
-#'   \code{region} (e.g. \code{"chr1:100-200"}) and \code{condition_id}
-#'   (e.g. \code{"Ast_DeJager_eQTL"}); used to fill \code{grange_start},
-#'   \code{grange_end}, and to compose \code{event} as
-#'   \code{paste(condition_id, gene, sep = "_")}. Missing subfields are
-#'   filled with \code{NA} rather than dropped.
-#' @return A data frame in the fixed 22-column unified \code{top_loci} shape
-#'   for this one fit and one method. Returns an empty data frame with the
-#'   correct columns and dtypes if there is nothing to retain.
+#' @param other_quantities Optional list with reserved subfields \code{region}
+#'   (filling \code{grange_start} / \code{grange_end}) and \code{condition_id}
+#'   (composing \code{event} as \code{paste(condition_id, gene, sep = "_")}).
+#' @return A data frame in the fixed 22-column shape for this fit and method,
+#'   or an empty data frame if nothing is retained.
 #' @export
 build_top_loci <- function(fit, cs_tables, variant_names, sumstats = NULL,
                            maf = NULL, method, signal_cutoff = 0.1,
@@ -501,123 +481,71 @@ build_top_loci <- function(fit, cs_tables, variant_names, sumstats = NULL,
   fit_gene <- if (!is.null(data_y_mat) && !is.null(colnames(data_y_mat))) {
     colnames(data_y_mat)[1]
   } else NA_character_
-  fit_condition_id <- other_quantities$condition_id
-  fit_event <- if (!is.null(fit_condition_id) &&
+  fit_event <- if (!is.null(other_quantities$condition_id) &&
                    !is.na(fit_gene) && nzchar(fit_gene)) {
-    paste(fit_condition_id, fit_gene, sep = "_")
+    paste(other_quantities$condition_id, fit_gene, sep = "_")
   } else NA_character_
-  grange_se        <- .parse_grange(other_quantities$region)
-  fit_grange_start <- grange_se[["start"]]
-  fit_grange_end   <- grange_se[["end"]]
+  grange <- .parse_grange(other_quantities$region)
 
-  # Per-variant posterior effect and SE, computed once for all variants.
+  # Per-variant posterior effect / SE, computed once across all variants.
   alpha <- as.matrix(fit$alpha)
   mu    <- if (!is.null(fit$mu))  as.matrix(fit$mu)  else NULL
   mu2   <- if (!is.null(fit$mu2)) as.matrix(fit$mu2) else NULL
-  posterior_effect <- if (!is.null(mu) && all(dim(alpha) == dim(mu))) {
+  post_mean <- if (!is.null(mu) && all(dim(alpha) == dim(mu))) {
     colSums(alpha * mu)
   } else rep(NA_real_, length(variant_names))
-  posterior_effect_se <- if (!is.null(mu2) && all(dim(alpha) == dim(mu2))) {
-    sqrt(pmax(colSums(alpha * mu2) - posterior_effect^2, 0))
+  post_se <- if (!is.null(mu2) && all(dim(alpha) == dim(mu2))) {
+    sqrt(pmax(colSums(alpha * mu2) - post_mean^2, 0))
   } else rep(NA_real_, length(variant_names))
 
-  # Per-coverage credible-set purity vectors, indexed by 1-based CS index.
-  purity_per_cov <- lapply(cs_tables, function(ct) {
-    sets_purity <- ct$sets$purity
-    if (!is.null(sets_purity) &&
-        "min.abs.corr" %in% names(sets_purity)) {
-      as.numeric(sets_purity$min.abs.corr)
-    } else if (!is.null(ct$cs_corr)) {
-      vapply(seq_along(ct$cs_corr), function(j) {
-        m <- ct$cs_corr[[j]]
-        if (is.null(m)) return(NA_real_)
-        if (!is.matrix(m) || nrow(m) <= 1) return(1)
-        min(abs(m[upper.tri(m)]))
-      }, numeric(1))
-    } else {
-      rep(NA_real_, length(ct$sets$cs))
-    }
-  })
-
-  # Internal long-shaped collection: one row per
-  # (variant_idx, cs_idx_at_this_coverage, coverage). Not exposed. Used only
-  # to project to the 22-column shape below.
-  long_rows <- list()
-  for (i in seq_along(cs_tables)) {
+  # Collect CS-membership records (variant_idx, cs_idx, coverage) across all
+  # requested coverages. This is the only intermediate; the 22-column shape
+  # is projected from it below.
+  cs_records <- do.call(rbind, lapply(seq_along(cs_tables), function(i) {
     ct <- cs_tables[[i]]
-    top_variants_idx <- get_top_variants_idx(ct, signal_cutoff)
-    cs_info <- get_cs_info(ct$sets$cs, top_variants_idx)
-    if (is.null(cs_info) || nrow(cs_info) == 0) next
-    long_rows[[length(long_rows) + 1L]] <- data.frame(
-      variant_idx = as.integer(cs_info$variant_idx),
-      cs_idx      = as.integer(cs_info$cs_idx),
-      coverage    = as.numeric(coverage_values[[i]]),
-      stringsAsFactors = FALSE
-    )
-  }
-  if (length(long_rows) == 0) return(.empty_top_loci())
-  long_df <- do.call(rbind, long_rows)
-  if (nrow(long_df) == 0) return(.empty_top_loci())
+    info <- get_cs_info(ct$sets$cs, get_top_variants_idx(ct, signal_cutoff))
+    if (is.null(info) || nrow(info) == 0) return(NULL)
+    data.frame(variant_idx = as.integer(info$variant_idx),
+               cs_idx      = as.integer(info$cs_idx),
+               coverage    = as.numeric(coverage_values[[i]]),
+               stringsAsFactors = FALSE)
+  }))
+  if (is.null(cs_records) || nrow(cs_records) == 0) return(.empty_top_loci())
 
-  # Key grid: one row per (variant_idx, cs_idx) at the export grain. Preserves
-  # overlapping CS membership for the same method.
-  key_grid <- unique(long_df[, c("variant_idx", "cs_idx"), drop = FALSE])
+  # Key grid: one row per (variant_idx, cs_idx). Overlapping CS membership
+  # within this method is preserved as separate keys.
+  key_grid <- unique(cs_records[, c("variant_idx", "cs_idx"), drop = FALSE])
   rownames(key_grid) <- NULL
-  n_keys <- nrow(key_grid)
+  n_keys  <- nrow(key_grid)
+  key_str <- paste(key_grid$variant_idx, key_grid$cs_idx, sep = ":")
 
-  # Helper: did this (variant_idx, cs_idx) appear at this coverage? If yes,
-  # return cs_idx; otherwise 0.
-  lookup_cs_at_cov <- function(v_idx, c_idx, cov) {
-    sel <- long_df$variant_idx == v_idx &
-           long_df$cs_idx       == c_idx &
-           abs(long_df$coverage - cov) < 1e-12
-    if (any(sel)) as.integer(c_idx) else 0L
+  # For each requested coverage, which keys appear in cs_records at that
+  # coverage? Returns the key's cs_idx if present, else 0L.
+  idx_at <- function(cov) {
+    at <- cs_records[abs(cs_records$coverage - cov) < 1e-12, , drop = FALSE]
+    hits <- paste(at$variant_idx, at$cs_idx, sep = ":")
+    ifelse(key_str %in% hits, key_grid$cs_idx, 0L)
   }
-  cov95_table_idx <- which(abs(coverage_values - 0.95) < 1e-12)
+  idx95 <- idx_at(0.95); idx70 <- idx_at(0.70); idx50 <- idx_at(0.50)
 
-  format_cs_string <- function(idx) {
-    if (is.na(idx) || idx <= 0L) paste0(method, "_0") else paste0(method, "_", idx)
-  }
+  # Per-coverage CS purity vectors (indexed by 1-based CS index). Only the
+  # 0.95-coverage purity is currently exported (as cs_95_purity); per-CS
+  # purities for the other coverages are kept here for downstream / future
+  # use even though they are not part of the 22-column output.
+  purity_per_cov <- lapply(cs_tables, .cs_purity_vec)
+  cov95          <- which(abs(coverage_values - 0.95) < 1e-12)
+  purity_95      <- if (length(cov95) > 0L) purity_per_cov[[cov95[1]]] else numeric()
+  cs_95_purity   <- vapply(idx95, function(i) {
+    if (i <= 0L || i > length(purity_95)) return(0)
+    v <- purity_95[i]; if (is.na(v)) 0 else as.numeric(v)
+  }, numeric(1))
 
-  cs_95        <- character(n_keys)
-  cs_70        <- character(n_keys)
-  cs_50        <- character(n_keys)
-  cs_95_purity <- numeric(n_keys)
-  for (k in seq_len(n_keys)) {
-    v_idx <- key_grid$variant_idx[k]
-    c_idx <- key_grid$cs_idx[k]
-    cs95_idx <- lookup_cs_at_cov(v_idx, c_idx, 0.95)
-    cs70_idx <- lookup_cs_at_cov(v_idx, c_idx, 0.70)
-    cs50_idx <- lookup_cs_at_cov(v_idx, c_idx, 0.50)
-    cs_95[k] <- format_cs_string(cs95_idx)
-    cs_70[k] <- format_cs_string(cs70_idx)
-    cs_50[k] <- format_cs_string(cs50_idx)
-    if (cs95_idx > 0L && length(cov95_table_idx) > 0L) {
-      pvec <- purity_per_cov[[cov95_table_idx[1]]]
-      cs_95_purity[k] <- if (cs95_idx <= length(pvec)) {
-        val <- pvec[cs95_idx]
-        if (is.na(val)) 0 else as.numeric(val)
-      } else 0
-    } else {
-      cs_95_purity[k] <- 0
-    }
-  }
-
-  # Per-variant lookups indexed by the row's variant_idx.
-  v_idx_vec       <- key_grid$variant_idx
-  variant_id_vec  <- variant_names[v_idx_vec]
-  pip_vec         <- as.numeric(fit$pip[v_idx_vec])
-  post_mean_vec   <- posterior_effect[v_idx_vec]
-  post_se_vec     <- posterior_effect_se[v_idx_vec]
-  beta_vec <- if (!is.null(sumstats$betahat))   sumstats$betahat[v_idx_vec]   else rep(NA_real_, n_keys)
-  se_vec   <- if (!is.null(sumstats$sebetahat)) sumstats$sebetahat[v_idx_vec] else rep(NA_real_, n_keys)
-  maf_vec  <- if (!is.null(maf))                maf[v_idx_vec]                else rep(NA_real_, n_keys)
-
+  v_idx          <- key_grid$variant_idx
+  variant_id_vec <- variant_names[v_idx]
   parsed <- tryCatch(
     suppressWarnings(parse_variant_id(variant_id_vec)),
-    error = function(e) {
-      stop("build_top_loci: parse_variant_id failed: ", conditionMessage(e))
-    }
+    error = function(e) stop("build_top_loci: parse_variant_id failed: ",
+                             conditionMessage(e))
   )
   if (is.null(parsed) || nrow(parsed) != length(variant_id_vec)) {
     stop("build_top_loci: parse_variant_id did not return one row per variant.")
@@ -626,10 +554,10 @@ build_top_loci <- function(fit, cs_tables, variant_names, sumstats = NULL,
     is.na(parsed$A1) | !nzchar(parsed$A1) |
     is.na(parsed$A2) | !nzchar(parsed$A2)
   if (any(invalid)) {
-    first_bad <- variant_id_vec[which(invalid)[[1]]]
     stop("build_top_loci: parse_variant_id produced invalid coordinates ",
-         "for variant_id: ", first_bad)
+         "for variant_id: ", variant_id_vec[which(invalid)[[1]]])
   }
+  pick <- function(x) if (is.null(x)) rep(NA_real_, n_keys) else x[v_idx]
 
   out <- data.frame(
     "#chr"                = parsed$chrom,
@@ -641,24 +569,41 @@ build_top_loci <- function(fit, cs_tables, variant_names, sumstats = NULL,
     gene                  = rep(fit_gene, n_keys),
     event                 = rep(fit_event, n_keys),
     n                     = rep(fit_n, n_keys),
-    maf                   = maf_vec,
-    beta                  = beta_vec,
-    se                    = se_vec,
-    pip                   = pip_vec,
-    posterior_effect_mean = post_mean_vec,
-    posterior_effect_se   = post_se_vec,
-    cs_95                 = cs_95,
-    cs_70                 = cs_70,
-    cs_50                 = cs_50,
+    maf                   = pick(maf),
+    beta                  = pick(sumstats$betahat),
+    se                    = pick(sumstats$sebetahat),
+    pip                   = as.numeric(fit$pip[v_idx]),
+    posterior_effect_mean = post_mean[v_idx],
+    posterior_effect_se   = post_se[v_idx],
+    cs_95                 = paste0(method, "_", idx95),
+    cs_70                 = paste0(method, "_", idx70),
+    cs_50                 = paste0(method, "_", idx50),
     cs_95_purity          = cs_95_purity,
     method                = rep(method, n_keys),
-    grange_start          = rep(fit_grange_start, n_keys),
-    grange_end            = rep(fit_grange_end, n_keys),
+    grange_start          = rep(grange[["start"]], n_keys),
+    grange_end            = rep(grange[["end"]],   n_keys),
     stringsAsFactors      = FALSE,
     check.names           = FALSE
   )
   rownames(out) <- NULL
   out
+}
+
+# Per-CS purity from one cs_table: prefer susieR's sets$purity$min.abs.corr;
+# fall back to cs_corr when purity is unavailable.
+.cs_purity_vec <- function(ct) {
+  sp <- ct$sets$purity
+  if (!is.null(sp) && "min.abs.corr" %in% names(sp)) {
+    return(as.numeric(sp$min.abs.corr))
+  }
+  if (!is.null(ct$cs_corr)) {
+    return(vapply(ct$cs_corr, function(m) {
+      if (is.null(m)) return(NA_real_)
+      if (!is.matrix(m) || nrow(m) <= 1) return(1)
+      min(abs(m[upper.tri(m)]))
+    }, numeric(1)))
+  }
+  rep(NA_real_, length(ct$sets$cs))
 }
 
 .empty_top_loci <- function() {
@@ -785,16 +730,14 @@ trim_finemapping_fit <- function(fit, effect_idx, method, cs_tables) {
 #' Format Fine-mapping Post-processing for Protocol Output
 #'
 #' Converts method-aware fine-mapping post-processing output into the root-level
-#' fields consumed by protocol RDS files. The single top-loci output is the
-#' \code{top_loci} field (the 22-column unified table); there is no
-#' \code{top_loci_long}, no wide-format \code{top_loci}, and no
-#' \code{top_loci_export}.
+#' fields consumed by protocol RDS files. Exposes the single 22-column unified
+#' \code{top_loci} table alongside \code{susie_result_trimmed},
+#' \code{variant_names}, and method-specific intermediates.
 #'
 #' @param post Output from \code{\link{postprocess_finemapping_fits}}.
 #' @param primary_method Method whose result should populate root-level fields.
 #' @return A list with root-level fields including \code{variant_names},
-#'   \code{susie_result_trimmed}, and the single unified \code{top_loci}
-#'   22-column table.
+#'   \code{susie_result_trimmed}, and \code{top_loci}.
 #' @export
 format_finemapping_output <- function(post, primary_method) {
   method_post <- post$finemapping_results[[primary_method]]
