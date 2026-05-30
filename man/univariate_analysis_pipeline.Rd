@@ -23,7 +23,7 @@ univariate_analysis_pipeline(
   coverage = c(0.95, 0.7, 0.5),
   min_abs_corr = 0.8,
   finemapping_extra_opts = list(refine = TRUE),
-  fit_susie_inf = TRUE,
+  add_susie_inf = TRUE,
   twas_weights = TRUE,
   sample_partition = NULL,
   max_cv_variants = -1,
@@ -72,7 +72,7 @@ which is stricter than the susieR default of 0.5.}
 SuSiE-inf is always fitted with \code{refine = FALSE}; the ordinary SuSiE
 fit keeps these options and is initialized with \code{model_init}.}
 
-\item{fit_susie_inf}{Whether to fit SuSiE-inf before ordinary SuSiE. Default
+\item{add_susie_inf}{Whether to fit SuSiE-inf before ordinary SuSiE. Default
 is TRUE for existing pipeline compatibility. If FALSE, ordinary SuSiE is
 fitted directly and SuSiE-inf fitted objects/results are not returned.}
 

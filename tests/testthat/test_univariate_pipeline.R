@@ -640,7 +640,7 @@ test_that("uap: ordinary susie can run without susie-inf initialization", {
 
   result <- univariate_analysis_pipeline(
     X = inp$X, Y = inp$Y, maf = inp$maf,
-    twas_weights = FALSE, fit_susie_inf = FALSE,
+    twas_weights = FALSE, add_susie_inf = FALSE,
     L = 15, L_greedy = 7
   )
   expect_length(captured_calls, 1)

@@ -25,7 +25,7 @@
 #' @param finemapping_extra_opts Additional options passed to \code{susieR::susie()}.
 #'   SuSiE-inf is always fitted with \code{refine = FALSE}; the ordinary SuSiE
 #'   fit keeps these options and is initialized with \code{model_init}.
-#' @param fit_susie_inf Whether to fit SuSiE-inf before ordinary SuSiE. Default
+#' @param add_susie_inf Whether to fit SuSiE-inf before ordinary SuSiE. Default
 #'   is TRUE for existing pipeline compatibility. If FALSE, ordinary SuSiE is
 #'   fitted directly and SuSiE-inf fitted objects/results are not returned.
 #' @param twas_weights Whether to compute TWAS weights. Default is TRUE.
@@ -61,7 +61,7 @@ univariate_analysis_pipeline <- function(
     coverage = c(0.95, 0.7, 0.5),
     min_abs_corr = 0.8,
     finemapping_extra_opts = list(refine = TRUE),
-    fit_susie_inf = TRUE,
+    add_susie_inf = TRUE,
     # TWAS weights and CV for TWAS weights
     twas_weights = TRUE,
     sample_partition = NULL,
@@ -79,11 +79,11 @@ univariate_analysis_pipeline <- function(
   if (!is.numeric(Y_scalar) || length(Y_scalar) != 1) stop("Y_scalar must be a numeric scalar")
   if (!is.numeric(L) || L <= 0) stop("L must be a positive integer")
   if (!is.null(L_greedy) && (!is.numeric(L_greedy) || L_greedy <= 0)) stop("L_greedy must be NULL or a positive integer")
-  if (!is.logical(fit_susie_inf) || length(fit_susie_inf) != 1 || is.na(fit_susie_inf)) {
-    stop("fit_susie_inf must be TRUE or FALSE")
+  if (!is.logical(add_susie_inf) || length(add_susie_inf) != 1 || is.na(add_susie_inf)) {
+    stop("add_susie_inf must be TRUE or FALSE")
   }
-  if (!isTRUE(fit_susie_inf) && isTRUE(twas_weights)) {
-    stop("fit_susie_inf = FALSE is not compatible with twas_weights = TRUE")
+  if (!isTRUE(add_susie_inf) && isTRUE(twas_weights)) {
+    stop("add_susie_inf = FALSE is not compatible with twas_weights = TRUE")
   }
 
   # Initial PIP check
@@ -126,7 +126,7 @@ univariate_analysis_pipeline <- function(
     finemapping_extra_opts,
     list(L = L, L_greedy = L_greedy, coverage = coverage[1])
   )
-  if (isTRUE(fit_susie_inf)) {
+  if (isTRUE(add_susie_inf)) {
     message("Fitting SuSiE-inf model on input data ...")
     message("Fitting SuSiE model initialized by SuSiE-inf ...")
     fitted_models <- fit_susie_inf_then_susie(
