@@ -71,6 +71,7 @@ multivariate_analysis_pipeline <- function(
     maf,
     X_variance = NULL,
     other_quantities = list(),
+    region = NULL,
     # filters
     imiss_cutoff = 1.0,
     maf_cutoff = 0.01,
@@ -304,7 +305,8 @@ multivariate_analysis_pipeline <- function(
     secondary_coverage = sec_coverage,
     signal_cutoff = signal_cutoff,
     min_abs_corr = min_abs_corr,
-    other_quantities = other_quantities
+    other_quantities = other_quantities,
+    region = region
   )
   res <- c(res, format_finemapping_output(mvsusie_post, primary_method = "mvsusie"))
   res$total_time_elapsed <- proc.time() - st

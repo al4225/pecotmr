@@ -15,6 +15,7 @@ postprocess_finemapping_fits(
   secondary_coverage = c(0.7, 0.5),
   signal_cutoff = 0.1,
   other_quantities = NULL,
+  region = NULL,
   prior_eff_tol = 1e-09,
   min_abs_corr = 0.8
 )
@@ -48,11 +49,11 @@ input used for credible-set purity and correlations.}
 \item{min_abs_corr}{Minimum absolute correlation for credible-set purity.}
 }
 \value{
-A list with \code{finemapping_results}, \code{top_loci_long}, and
-  \code{top_loci}. The long table is lossless, with one row per
-  variant-method-coverage-CS membership. The wide table stores one row per
-  variant, method-specific \code{pip_<method>} columns, method-specific
-  \code{CS_<coverage>_<method>} columns, and \code{model_source}.
+A list with \code{finemapping_results} (per-method post-processed
+  objects, each carrying a trimmed fit and method-specific intermediates)
+  and a single unified \code{top_loci} table in the fixed 22-column shape
+  (see \code{\link{build_top_loci}}). Per-method contributions are
+  row-bound into \code{top_loci} by an outer method for-loop.
 }
 \description{
 Applies method-aware post-processing to one or more SuSiE-family fits and

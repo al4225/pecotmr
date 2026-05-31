@@ -12,6 +12,7 @@ univariate_analysis_pipeline(
   Y_scalar = 1,
   X_variance = NULL,
   other_quantities = list(),
+  region = NULL,
   imiss_cutoff = 1,
   maf_cutoff = NULL,
   xvar_cutoff = 0,
@@ -23,6 +24,7 @@ univariate_analysis_pipeline(
   coverage = c(0.95, 0.7, 0.5),
   min_abs_corr = 0.8,
   finemapping_extra_opts = list(refine = TRUE),
+  add_susie_inf = TRUE,
   twas_weights = TRUE,
   sample_partition = NULL,
   max_cv_variants = -1,
@@ -45,6 +47,8 @@ univariate_analysis_pipeline(
 \item{X_variance}{Optional variance of X. Default is NULL.}
 
 \item{other_quantities}{A list of other quantities to be carried into fine-mapping post-processing. Default is an empty list.}
+
+\item{region}{Optional \code{"chr:start-end"} string for the analysis region. Default is NULL.}
 
 \item{imiss_cutoff}{Individual missingness cutoff. Default is 1.0.}
 
@@ -71,6 +75,10 @@ which is stricter than the susieR default of 0.5.}
 SuSiE-inf is always fitted with \code{refine = FALSE}; the ordinary SuSiE
 fit keeps these options and is initialized with \code{model_init}.}
 
+\item{add_susie_inf}{Whether to fit SuSiE-inf before ordinary SuSiE. Default
+is TRUE for existing pipeline compatibility. If FALSE, ordinary SuSiE is
+fitted directly and SuSiE-inf fitted objects/results are not returned.}
+
 \item{twas_weights}{Whether to compute TWAS weights. Default is TRUE.}
 
 \item{sample_partition}{Optional data frame with Sample and Fold columns for cross-validation. Default is NULL.}
@@ -88,6 +96,6 @@ A list containing the univariate analysis results.
 }
 \description{
 This function performs univariate analysis for fine-mapping and Transcriptome-Wide Association Study (TWAS)
-with optional cross-validation. Fine-mapping fits SuSiE-inf first and then
-fits SuSiE initialized from the SuSiE-inf result.
+with optional cross-validation. By default, fine-mapping fits SuSiE-inf first
+and then fits SuSiE initialized from the SuSiE-inf result.
 }
