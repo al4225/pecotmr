@@ -10,6 +10,7 @@ multivariate_analysis_pipeline(
   maf,
   X_variance = NULL,
   other_quantities = list(),
+  region = NULL,
   imiss_cutoff = 1,
   maf_cutoff = 0.01,
   xvar_cutoff = 0.01,
