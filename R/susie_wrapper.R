@@ -148,6 +148,51 @@ fit_susie_inf_then_susie <- function(X, y, args = list(),
   list(susie = susie_fit, susie_inf = susie_inf_fit)
 }
 
+#' Two-stage SuSiE-RSS Fine-mapping
+#'
+#' RSS analog of \code{fit_susie_inf_then_susie}. Fits SuSiE-inf via
+#' \code{susie_rss} first, then initialises standard SuSiE-RSS from
+#' the SuSiE-inf result. The single pair of fits can be used both for
+#' fine-mapping post-processing and TWAS weight extraction.
+#'
+#' @param z Numeric vector of z-scores.
+#' @param R LD correlation matrix.
+#' @param n Sample size (scalar).
+#' @param args Default arguments forwarded to both fits.
+#' @param susie_inf_args SuSiE-inf-specific overrides.
+#' @param susie_args Standard SuSiE-RSS-specific overrides.
+#' @param fitted_models Optional list with pre-fitted \code{$susie} and/or
+#'   \code{$susie_inf} objects to skip re-fitting.
+#' @return A list with \code{susie} and \code{susie_inf} fit objects.
+#' @importFrom susieR susie_rss
+#' @export
+fit_susie_inf_then_susie_rss <- function(z, R, n, args = list(),
+                                         susie_inf_args = list(),
+                                         susie_args = list(),
+                                         fitted_models = NULL) {
+  if (is.null(fitted_models)) fitted_models <- list()
+  susie_inf_fit <- fitted_models[["susie_inf"]]
+  susie_fit <- fitted_models[["susie"]]
+
+  if (is.null(susie_inf_fit)) {
+    fit_args <- modifyList(args, susie_inf_args)
+    fit_args <- modifyList(fit_args, list(
+      z = z, R = R, n = n, unmappable_effects = "inf",
+      convergence_method = "pip", refine = FALSE, model_init = NULL
+    ))
+    susie_inf_fit <- do.call(susie_rss, fit_args)
+  }
+  susie_inf_fit <- .set_finemapping_fit_class(susie_inf_fit, "susie_inf")
+
+  if (is.null(susie_fit)) {
+    fit_args <- prepare_susie_from_inf_args(modifyList(args, susie_args), susie_inf_fit, refine_default = TRUE)
+    susie_fit <- do.call(susie_rss, c(list(z = z, R = R, n = n), fit_args))
+  }
+  susie_fit <- .set_finemapping_fit_class(susie_fit, "susie_rss")
+
+  list(susie = susie_fit, susie_inf = susie_inf_fit)
+}
+
 #' Post-process Fine-mapping Fits
 #'
 #' Applies method-aware post-processing to one or more SuSiE-family fits and
@@ -182,7 +227,8 @@ postprocess_finemapping_fits <- function(fits, data_x, data_y = NULL,
                                          other_quantities = NULL,
                                          region = NULL,
                                          prior_eff_tol = 1e-9,
-                                         min_abs_corr = 0.8) {
+                                         min_abs_corr = 0.8,
+                                         cs_input = NULL) {
   fits <- fits[!vapply(fits, is.null, logical(1))]
   if (length(fits) == 0) stop("At least one fine-mapping fit must be supplied.")
   if (is.null(names(fits)) || any(names(fits) == "")) {
@@ -200,7 +246,8 @@ postprocess_finemapping_fits <- function(fits, data_x, data_y = NULL,
       coverage = coverage, secondary_coverage = secondary_coverage,
       signal_cutoff = signal_cutoff, other_quantities = other_quantities,
       region = region,
-      prior_eff_tol = prior_eff_tol, min_abs_corr = min_abs_corr
+      prior_eff_tol = prior_eff_tol, min_abs_corr = min_abs_corr,
+      cs_input = cs_input
     )
   })
   names(posts) <- names(fits)
@@ -229,28 +276,33 @@ postprocess_finemapping_fit <- function(fit, ...) {
 }
 
 #' @exportS3Method
-postprocess_finemapping_fit.susie <- function(fit, method = "susie", ...) {
-  .postprocess_finemapping_fit_common(fit, method = method, cs_input = "X", ...)
+postprocess_finemapping_fit.susie <- function(fit, method = "susie", cs_input = NULL, ...) {
+  if (is.null(cs_input)) cs_input <- "X"
+  .postprocess_finemapping_fit_common(fit, method = method, cs_input = cs_input, ...)
 }
 
 #' @exportS3Method
-postprocess_finemapping_fit.susie_inf <- function(fit, method = "susie_inf", ...) {
-  .postprocess_finemapping_fit_common(fit, method = method, cs_input = "X", ...)
+postprocess_finemapping_fit.susie_inf <- function(fit, method = "susie_inf", cs_input = NULL, ...) {
+  if (is.null(cs_input)) cs_input <- "X"
+  .postprocess_finemapping_fit_common(fit, method = method, cs_input = cs_input, ...)
 }
 
 #' @exportS3Method
-postprocess_finemapping_fit.susie_rss <- function(fit, method = "susie_rss", ...) {
-  .postprocess_finemapping_fit_common(fit, method = method, cs_input = "Xcorr", ...)
+postprocess_finemapping_fit.susie_rss <- function(fit, method = "susie_rss", cs_input = NULL, ...) {
+  if (is.null(cs_input)) cs_input <- "Xcorr"
+  .postprocess_finemapping_fit_common(fit, method = method, cs_input = cs_input, ...)
 }
 
 #' @exportS3Method
-postprocess_finemapping_fit.mvsusie <- function(fit, method = "mvsusie", ...) {
-  .postprocess_finemapping_fit_common(fit, method = method, cs_input = "X", ...)
+postprocess_finemapping_fit.mvsusie <- function(fit, method = "mvsusie", cs_input = NULL, ...) {
+  if (is.null(cs_input)) cs_input <- "X"
+  .postprocess_finemapping_fit_common(fit, method = method, cs_input = cs_input, ...)
 }
 
 #' @exportS3Method
-postprocess_finemapping_fit.susiF <- function(fit, method = "fsusie", ...) {
-  .postprocess_finemapping_fit_common(fit, method = method, cs_input = "fsusie", ...)
+postprocess_finemapping_fit.susiF <- function(fit, method = "fsusie", cs_input = NULL, ...) {
+  if (is.null(cs_input)) cs_input <- "fsusie"
+  .postprocess_finemapping_fit_common(fit, method = method, cs_input = cs_input, ...)
 }
 
 .postprocess_finemapping_fit_common <- function(fit, method, data_x, data_y = NULL,
@@ -297,10 +349,7 @@ postprocess_finemapping_fit.susiF <- function(fit, method = "fsusie", ...) {
     sumstats = sumstats
   )
 
-  # Also return as list for backwards compatibility with existing consumers
   res <- list(
-    variant_names = variant_names,
-    result_trimmed = trimmed,
     top_loci = top_loci,
     finemapping_result = fm_result
   )
@@ -734,25 +783,24 @@ trim_finemapping_fit <- function(fit, effect_idx, method, cs_tables) {
 #' Format Fine-mapping Post-processing for Protocol Output
 #'
 #' Converts method-aware fine-mapping post-processing output into the root-level
-#' fields consumed by protocol RDS files. Exposes the single 22-column unified
-#' \code{top_loci} table alongside \code{susie_result_trimmed},
-#' \code{variant_names}, and method-specific intermediates.
+#' fields consumed by protocol RDS files. The primary method's
+#' \code{FineMappingResult} S4 object is promoted to the \code{finemapping_result}
+#' field; use its accessors (\code{getTrimmedFit}, \code{getVariantNames},
+#' \code{getTopLoci}, etc.) instead of legacy list keys.
 #'
 #' @param post Output from \code{\link{postprocess_finemapping_fits}}.
 #' @param primary_method Method whose result should populate root-level fields.
-#' @return A list with root-level fields including \code{variant_names},
-#'   \code{susie_result_trimmed}, and \code{top_loci}.
+#' @return A list with root-level fields including \code{finemapping_result}
+#'   and \code{top_loci}.
 #' @export
 format_finemapping_output <- function(post, primary_method) {
   method_post <- post$finemapping_results[[primary_method]]
   if (is.null(method_post)) {
     stop("primary_method was not found in finemapping_results: ", primary_method)
   }
-  keep_names <- setdiff(names(method_post), c("result_trimmed", "top_loci"))
   c(
-    method_post[keep_names],
+    method_post,
     list(
-      susie_result_trimmed = method_post$result_trimmed,
       top_loci = post$top_loci
     )
   )
@@ -792,8 +840,9 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, run_allele
       "pos", "A2", "A1"
     )], match_min_prop = match_min_prop)
     # match_ref_panel outputs canonical variant_ids (with chr prefix)
-    original_idx <- match(weights_matrix_qced$qc_summary$variants_id_original, twas_weights_variants)
-    intersected_indices <- original_idx[weights_matrix_qced$qc_summary$keep == TRUE]
+    qc_summary_df <- getQCSummary(weights_matrix_qced)
+    original_idx <- match(qc_summary_df$variants_id_original, twas_weights_variants)
+    intersected_indices <- original_idx[qc_summary_df$keep == TRUE]
   } else {
     # Normalize keep_variants to canonical format for matching
     keep_variants_normalized <- normalize_variant_id(keep_variants)
@@ -817,7 +866,7 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, run_allele
   adjusted_xqtl_coef <- colSums(adjusted_xqtl_alpha * mu_subset) / x_column_scal_factors_subset
   # allele_qc now outputs canonical variant_ids (with chr prefix) -- no need to add chr
   remained_variants_ids <- if (run_allele_qc) {
-    weights_matrix_qced$target_data_qced$variant_id
+    getHarmonizedData(weights_matrix_qced)$variant_id
   } else {
     intersected_variants
   }
@@ -892,14 +941,18 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
     res <- do.call(susie_rss, c(common, list(L = L, L_greedy = L_greedy)))
   }
 
-  # For post-processing, need a square matrix (R or computed from X).
-  # For mixture panels (list of X), use the first panel to compute R.
+  # For post-processing, pass genotype matrix X directly when available.
+  # susie_get_cs(fit, X=...) computes correlations only for CS variants,
+  # avoiding the full p x p R matrix.
   if (!is.null(LD_mat)) {
     data_x <- LD_mat
+    pp_cs_input <- "Xcorr"
   } else if (is.list(X_mat) && !is.matrix(X_mat)) {
-    data_x <- compute_LD(X_mat[[1]][, seq_along(z), drop = FALSE], method = "sample")
+    data_x <- do.call(rbind, X_mat)[, seq_along(z), drop = FALSE]
+    pp_cs_input <- "X"
   } else {
-    data_x <- compute_LD(X_mat[, seq_along(z), drop = FALSE], method = "sample")
+    data_x <- X_mat[, seq_along(z), drop = FALSE]
+    pp_cs_input <- "X"
   }
 
   rss_method <- analysis_method
@@ -911,7 +964,8 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
     coverage = coverage,
     secondary_coverage = secondary_coverage,
     signal_cutoff = signal_cutoff,
-    min_abs_corr = min_abs_corr
+    min_abs_corr = min_abs_corr,
+    cs_input = pp_cs_input
   )
   format_finemapping_output(post, primary_method = rss_method)
 }

@@ -25,7 +25,7 @@ calc_I2 <- function(Q, Est) {
 #'
 #' Description of what the function does.
 #'
-#' @param susie_result A list containing the results of SuSiE analysis. This list should include nested elements such as 'susie_results', 'susie_result_trimmed', and 'top_loci', containing details about the statistical analysis of genetic variants.
+#' @param susie_result A list containing the results of SuSiE analysis. This list should include nested elements such as 'susie_results', 'finemapping_result' (a FineMappingResult S4 object), and 'top_loci', containing details about the statistical analysis of genetic variants.
 #' @param condition A character string specifying the conditions. This is used to select the corresponding subset of results within 'susie_result'.
 #' @param gwas_sumstats_db A data frame containing summary statistics from GWAS studies. It should include columns for variant id and their associated statistics such as beta coefficients and standard errors.
 #' @param coverage A character string specifying the credible set column. If
@@ -95,10 +95,15 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = NULL
       gwas_sumstats_db_extracted$variant_id, c("bhat_x"),
       match_min_prop = 0
     )
-    susie_cs_result_formatted <- susie_cs_result_formatted$target_data_qced[, c("gene_name", "variant_id", "bhat_x", "sbhat_x", "cs", "pip")]
+    susie_cs_result_formatted <- getHarmonizedData(susie_cs_result_formatted)[, c("gene_name", "variant_id", "bhat_x", "sbhat_x", "cs", "pip")]
   }
-  # Normalize variant IDs to canonical format for matching
-  gwas_sumstats_db_extracted$variant_id <- normalize_variant_id(gwas_sumstats_db_extracted$variant_id)
+  # Ensure consistent chr prefix convention before intersecting
+  if (nrow(susie_cs_result_formatted) == 0) return(.create_null_mr_df(gene_name, mr_format_spec))
+  if (!is.null(susie_cs_result_formatted$variant_id) && !is.null(gwas_sumstats_db_extracted$variant_id)) {
+    chr_matched <- ensure_chr_match(susie_cs_result_formatted$variant_id, gwas_sumstats_db_extracted$variant_id)
+    susie_cs_result_formatted$variant_id <- chr_matched$ids_a
+    gwas_sumstats_db_extracted$variant_id <- chr_matched$ids_b
+  }
   common_variants <- intersect(susie_cs_result_formatted$variant_id, gwas_sumstats_db_extracted$variant_id)
   if (length(common_variants) == 0) return(.create_null_mr_df(gene_name, mr_format_spec))
 

@@ -763,6 +763,8 @@ merge_sumstats_matrices <- function(matrix_list, value_column, ref_panel = NULL,
             cohort_df <- cbind(cohort_variants_df, value = df2[, value_column, drop = FALSE])
 
             # Step 4: Merge with LD reference and filter
+            # Normalize ld_meta_file chrom to integer to match parse_variant_id output
+            ld_meta_file$chrom <- as.integer(strip_chr_prefix(as.character(ld_meta_file$chrom)))
             variants_ld_block_match <- merge(cohort_df, ld_meta_file, by = "chrom", allow.cartesian = TRUE) %>%
               filter(pos > start & pos < end) %>%
               select(-path)
@@ -774,12 +776,12 @@ merge_sumstats_matrices <- function(matrix_list, value_column, ref_panel = NULL,
               ld_bim_file <- vroom(bim_file_path)
 
               # Perform allele quality control
-              flipped_data <- match_ref_panel(data, ld_bim_file$V2,
+              flipped_data <- getHarmonizedData(match_ref_panel(data, ld_bim_file$V2,
                 col_to_flip = c(value_column),
                 match_min_prop = 0, remove_dups = FALSE,
                 remove_indels = FALSE, remove_strand_ambiguous = FALSE,
                 flip_strand = FALSE, remove_unmatched = TRUE
-              )$target_data_qced
+              ))
               return(flipped_data)
             }
 
@@ -797,10 +799,10 @@ merge_sumstats_matrices <- function(matrix_list, value_column, ref_panel = NULL,
             # Step 3: Combine extracted chromosomal info with value column
             cohort_df <- cbind(cohort_variants_df, value = df2[, value_column, drop = FALSE])
           
-            flipped_data <- match_ref_panel(cohort_df, ref_panel, col_to_flip = c(value_column),
+            flipped_data <- getHarmonizedData(match_ref_panel(cohort_df, ref_panel, col_to_flip = c(value_column),
                 match_min_prop = 0, remove_dups = FALSE,
                 remove_indels = FALSE, remove_strand_ambiguous = FALSE,
-                flip_strand = FALSE, remove_unmatched = TRUE, remove_same_vars = FALSE)$target_data_qced
+                flip_strand = FALSE, remove_unmatched = TRUE, remove_same_vars = FALSE))
               
             final_df <- flipped_data %>%
                 select(c("variant_id", value_column))
@@ -1098,8 +1100,10 @@ extract_flatten_sumstats_from_nested <- function(data, extract_inf = "z", max_de
     }
 
     if (is.list(element)) {
-      if (all(c("variant_names", "sumstats") %in% names(element))) {
-        variant_names <- element$variant_names
+      has_fm <- !is.null(element$finemapping_result) && is(element$finemapping_result, "FineMappingResult")
+      has_sumstats <- "sumstats" %in% names(element)
+      if (has_sumstats && has_fm) {
+        variant_names <- getVariantNames(element$finemapping_result)
         sumstats <- element$sumstats
 
         # Extract based on type

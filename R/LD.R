@@ -272,16 +272,40 @@ load_LD_matrix <- function(LD_meta_file_path, region, extract_coordinates = NULL
 
   if (is_geno) {
     geno_path <- resolve_genotype_path_for_region(source$meta_path, region)
-    return(load_LD_from_genotype(geno_path, region,
-                                 return_genotype = return_genotype,
-                                 n_sample = n_sample))
+    result <- load_LD_from_genotype(geno_path, region,
+                                    return_genotype = return_genotype,
+                                    n_sample = n_sample)
+  } else {
+    # Pre-computed LD blocks (.cor.xz)
+    if (return_genotype) {
+      stop("return_genotype=TRUE requires genotype files, not pre-computed LD matrices.")
+    }
+    result <- load_LD_from_blocks(source$meta_path, region, extract_coordinates, n_sample = n_sample)
   }
 
-  # Pre-computed LD blocks (.cor.xz)
-  if (return_genotype) {
-    stop("return_genotype=TRUE requires genotype files, not pre-computed LD matrices.")
+  # Remove any duplicate variant IDs (safety net for boundary overlaps)
+  variant_ids <- getVariantIds(result)
+  if (!is.null(variant_ids)) {
+    dup_idx <- which(duplicated(variant_ids))
+    if (length(dup_idx) > 0) {
+      variant_ids_clean <- variant_ids[-dup_idx]
+      corr <- getCorrelation(result)
+      if (!is.null(corr)) {
+        corr <- corr[-dup_idx, -dup_idx, drop = FALSE]
+      }
+      variants_gr <- result@variants[-dup_idx]
+      result <- LDData(
+        correlation = corr,
+        genotype_handle = result@genotype_handle,
+        snp_idx = result@snp_idx,
+        variants = variants_gr,
+        block_metadata = result@block_metadata,
+        n_ref = result@n_ref
+      )
+    }
   }
-  load_LD_from_blocks(source$meta_path, region, extract_coordinates, n_sample = n_sample)
+
+  result
 }
 
 # ---------- Internal: resolve LD source type ----------
@@ -473,6 +497,69 @@ load_LD_from_genotype <- function(genotype_path, region,
   )
 }
 
+# ---------- LD sketch: genotype loading ----------
+
+#' HWE-based standardization of a genotype matrix
+#'
+#' Centers by 2*allele_freq, scales by sqrt(2*allele_freq*(1-allele_freq)).
+#' Assumes monomorphic variants have already been removed.
+#'
+#' @param X Numeric genotype matrix (n x p).
+#' @param allele_freq Numeric vector of allele frequencies (length p).
+#' @return Standardized matrix (n x p).
+#' @noRd
+standardize_genotype_hwe <- function(X, allele_freq) {
+  X_std <- sweep(X, 2, 2 * allele_freq)
+  sweep(X_std, 2, sqrt(2 * allele_freq * (1 - allele_freq)), "/")
+}
+
+#' Load LD sketch genotypes for a region
+#'
+#' Loads genotype data for a region via \code{load_LD_matrix(return_genotype=TRUE)}
+#' and removes monomorphic variants. Returns the raw genotype matrix and metadata,
+#' which callers can use to derive either a correlation matrix R (for summary-based
+#' weight training or fine-mapping) or an SVD (for TWAS z-score computation).
+#'
+#' @param ld_meta_file_path Path to the LD metadata TSV file.
+#' @param region Region of interest: "chr:start-end" string or data.frame with chrom/start/end.
+#' @param n_sample Optional original panel sample size for computing variance
+#'   (= 2*p*(1-p)*n/(n-1)). Passed through to \code{load_LD_matrix()}.
+#'
+#' @return An \code{LDData} S4 object with monomorphic variants removed.
+#'   Consumers should use S4 accessors: \code{getGenotypes()}, \code{getRefPanel()},
+#'   \code{getVariantIds()}. The number of sketch samples is
+#'   \code{nrow(getGenotypes(result))}.
+#' @export
+load_ld_sketch <- function(ld_meta_file_path, region, n_sample = NULL) {
+  result <- load_LD_matrix(ld_meta_file_path, region, return_genotype = TRUE, n_sample = n_sample)
+  if (!is(result, "LDData")) {
+    stop("load_LD_matrix must return an LDData object")
+  }
+  X <- getGenotypes(result)
+  ref_panel <- getRefPanel(result)
+
+  # Remove monomorphic variants (zero variance under HWE)
+  p <- ref_panel$allele_freq
+  polymorphic <- p > 0 & p < 1
+  if (!all(polymorphic)) {
+    X <- X[, polymorphic, drop = FALSE]
+    ref_panel <- ref_panel[polymorphic, , drop = FALSE]
+  }
+
+  # Rebuild LDData with the extracted (and filtered) genotype matrix stored
+  # directly in genotype_handle so getGenotypes() returns it without needing
+  # the original file handle.
+  variants_gr <- .ref_panel_to_granges(ref_panel)
+  LDData(
+    correlation = NULL,
+    genotype_handle = X,
+    snp_idx = NULL,
+    variants = variants_gr,
+    block_metadata = getBlockMetadata(result),
+    n_ref = result@n_ref
+  )
+}
+
 # ---------- Internal: load LD from pre-computed blocks ----------
 
 #' Load pre-computed LD from block-based metadata files.
@@ -572,7 +659,7 @@ load_LD_from_blocks <- function(LD_meta_file_path, region, extract_coordinates =
     snp_idx = NULL,
     variants = variants_gr,
     block_metadata = block_metadata,
-    n_ref = 0L
+    n_ref = if (is.null(n_sample)) 0L else as.integer(n_sample)
   )
 }
 
@@ -627,8 +714,7 @@ filter_variants_by_ld_reference <- function(variant_ids, ld_reference_meta_file,
 #' into a list of smaller matrices based on the block_indices, making it easier to work with
 #' large LD matrices that span multiple blocks.
 #'
-#' @param ld_data A list as returned by load_LD_matrix, containing LD_matrix,
-#'                LD_variants, ref_panel, and block_metadata.
+#' @param ld_data An \code{LDData} S4 object as returned by \code{load_LD_matrix()}.
 #' @param merge_small_blocks Logical, whether to merge blocks smaller than min_merged_block_size (default: TRUE).
 #' @param min_merged_block_size Integer, minimum number of variants for a block after merging (default: 500).
 #' @param max_merged_block_size Integer, maximum number of variants in a block after merging (default: 10000).
@@ -642,19 +728,15 @@ filter_variants_by_ld_reference <- function(variant_ids, ld_reference_meta_file,
 #' @noRd
 partition_LD_matrix <- function(ld_data, merge_small_blocks = TRUE,
                                 min_merged_block_size = 500, max_merged_block_size = 10000) {
-  # Extract components from ld_data (support both LDData S4 and legacy list)
-  if (is(ld_data, "LDData")) {
-    combined_matrix <- getCorrelation(ld_data)
-    block_metadata <- ld_data@block_metadata
-    if (is(block_metadata, "LDBlocks")) {
-      block_metadata <- as.data.frame(block_metadata@blocks)
-    }
-    variant_ids <- getVariantIds(ld_data)
-  } else {
-    combined_matrix <- ld_data$LD_matrix
-    block_metadata <- ld_data$block_metadata
-    variant_ids <- ld_data$LD_variants
+  if (!is(ld_data, "LDData")) {
+    stop("ld_data must be an LDData object")
   }
+  combined_matrix <- getCorrelation(ld_data)
+  block_metadata <- ld_data@block_metadata
+  if (is(block_metadata, "LDBlocks")) {
+    block_metadata <- as.data.frame(block_metadata@blocks)
+  }
+  variant_ids <- getVariantIds(ld_data)
 
   # Error if matrix is empty
   if (is.null(combined_matrix) || nrow(combined_matrix) == 0 || ncol(combined_matrix) == 0) {

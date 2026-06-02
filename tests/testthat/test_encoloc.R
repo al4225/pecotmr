@@ -1,4 +1,17 @@
 context("encoloc")
+
+.test_fm_result <- function(variant_names, trimmed_fit = list(),
+                            top_loci = data.frame(variant_id = character(0),
+                                                  method = character(0),
+                                                  stringsAsFactors = FALSE)) {
+  FineMappingResult(
+    variant_names = variant_names,
+    trimmed_fit = trimmed_fit,
+    top_loci = top_loci,
+    method = "susie"
+  )
+}
+
 library(tidyverse)
 library(coloc)
 
@@ -424,6 +437,215 @@ test_that("coloc_wrapper extracts analysis_region from xqtl_region_obj", {
   expect_true("analysis_region" %in% names(result))
 
   file.remove(gwas_file, xqtl_file)
+})
+
+# ===========================================================================
+# coloc_wrapper inline fine-mapping tests
+# ===========================================================================
+
+test_that("coloc_wrapper errors when no GWAS source provided", {
+  xqtl_file <- tempfile(fileext = ".rds")
+  saveRDS(list(list(susie_fit = generate_mock_susie_fit(seed = 1))), xqtl_file)
+  expect_error(
+    coloc_wrapper(xqtl_file),
+    "Either set run_finemapping"
+  )
+  file.remove(xqtl_file)
+})
+
+test_that("coloc_wrapper errors when run_finemapping missing sumstat_path", {
+  expect_error(
+    coloc_wrapper("fake.rds", run_finemapping = TRUE, LD_data = list()),
+    "sumstat_path is required"
+  )
+})
+
+test_that("coloc_wrapper errors when run_finemapping missing LD_data", {
+  expect_error(
+    coloc_wrapper("fake.rds", run_finemapping = TRUE, sumstat_path = "s.tsv"),
+    "LD_data is required"
+  )
+})
+
+test_that("coloc_wrapper warns when both gwas_files and run_finemapping", {
+  # This will warn, then error on sumstat_path/LD_data validation
+  expect_warning(
+    tryCatch(
+      coloc_wrapper("xqtl.rds", gwas_files = "gwas.rds",
+                    run_finemapping = TRUE, sumstat_path = "s.tsv",
+                    LD_data = list()),
+      error = function(e) NULL
+    ),
+    "Inline fine-mapping will be used"
+  )
+})
+
+test_that("coloc_wrapper with run_finemapping = TRUE uses rss_analysis_pipeline", {
+  xqtl_file <- tempfile(fileext = ".rds")
+  xqtl_fit <- generate_mock_susie_fit(seed = 1)
+  saveRDS(list(gene = list(susie_fit = xqtl_fit)), xqtl_file)
+
+  # Build mock pipeline result matching rss_analysis_pipeline output structure
+  mock_pipeline <- list(
+    "susie_rss_SLALOM_RAISS_imputed" = list(
+      finemapping_result = .test_fm_result(
+        variant_names = xqtl_fit$variant_names,
+        trimmed_fit = list(
+          lbf_variable = xqtl_fit$lbf_variable,
+          V = xqtl_fit$V,
+          pip = xqtl_fit$pip,
+          sets = list(cs_index = seq_len(nrow(xqtl_fit$lbf_variable)))
+        )
+      )
+    ),
+    rss_data_analyzed = data.frame(
+      variant_id = xqtl_fit$variant_names,
+      z = rnorm(length(xqtl_fit$variant_names))
+    )
+  )
+
+  local_mocked_bindings(
+    rss_analysis_pipeline = function(...) mock_pipeline
+  )
+
+  result <- coloc_wrapper(
+    xqtl_file,
+    run_finemapping = TRUE,
+    sumstat_path = "/fake/gwas.tsv",
+    LD_data = list(LD_matrix = diag(10)),
+    n_sample = 10000,
+    region = "chr22:1-100",
+    xqtl_finemapping_obj = "susie_fit",
+    xqtl_varname_obj = c("susie_fit", "variant_names")
+  )
+  expect_true(all(c("summary", "results") %in% names(result)))
+  file.remove(xqtl_file)
+})
+
+test_that("coloc_wrapper with return_finemapping includes pipeline result", {
+  xqtl_file <- tempfile(fileext = ".rds")
+  xqtl_fit <- generate_mock_susie_fit(seed = 1)
+  saveRDS(list(gene = list(susie_fit = xqtl_fit)), xqtl_file)
+
+  mock_pipeline <- list(
+    "susie_rss_SLALOM" = list(
+      finemapping_result = .test_fm_result(
+        variant_names = xqtl_fit$variant_names,
+        trimmed_fit = list(
+          lbf_variable = xqtl_fit$lbf_variable,
+          V = xqtl_fit$V,
+          pip = xqtl_fit$pip,
+          sets = list(cs_index = seq_len(nrow(xqtl_fit$lbf_variable)))
+        )
+      )
+    ),
+    rss_data_analyzed = data.frame(
+      variant_id = xqtl_fit$variant_names,
+      z = rnorm(length(xqtl_fit$variant_names))
+    )
+  )
+
+  local_mocked_bindings(
+    rss_analysis_pipeline = function(...) mock_pipeline
+  )
+
+  result <- coloc_wrapper(
+    xqtl_file,
+    run_finemapping = TRUE,
+    sumstat_path = "/fake/gwas.tsv",
+    LD_data = list(LD_matrix = diag(10)),
+    n_sample = 10000,
+    xqtl_finemapping_obj = "susie_fit",
+    xqtl_varname_obj = c("susie_fit", "variant_names"),
+    return_finemapping = TRUE
+  )
+  expect_true("gwas_finemapping" %in% names(result))
+  expect_true("susie_rss_SLALOM" %in% names(result$gwas_finemapping))
+  file.remove(xqtl_file)
+})
+
+test_that("coloc_wrapper save_finemapping_path saves reusable RDS", {
+  xqtl_file <- tempfile(fileext = ".rds")
+  save_path <- tempfile(fileext = ".rds")
+  xqtl_fit <- generate_mock_susie_fit(seed = 1)
+  saveRDS(list(gene = list(susie_fit = xqtl_fit)), xqtl_file)
+
+  mock_pipeline <- list(
+    "susie_rss_SLALOM" = list(
+      finemapping_result = .test_fm_result(
+        variant_names = xqtl_fit$variant_names,
+        trimmed_fit = list(
+          lbf_variable = xqtl_fit$lbf_variable,
+          V = xqtl_fit$V,
+          pip = xqtl_fit$pip,
+          sets = list(cs_index = seq_len(nrow(xqtl_fit$lbf_variable)))
+        )
+      )
+    ),
+    rss_data_analyzed = data.frame(
+      variant_id = xqtl_fit$variant_names,
+      z = rnorm(length(xqtl_fit$variant_names))
+    )
+  )
+
+  local_mocked_bindings(
+    rss_analysis_pipeline = function(...) mock_pipeline
+  )
+
+  result <- coloc_wrapper(
+    xqtl_file,
+    run_finemapping = TRUE,
+    sumstat_path = "/fake/gwas.tsv",
+    LD_data = list(LD_matrix = diag(10)),
+    n_sample = 10000,
+    xqtl_finemapping_obj = "susie_fit",
+    xqtl_varname_obj = c("susie_fit", "variant_names"),
+    save_finemapping_path = save_path
+  )
+
+  # Verify file was saved
+  expect_true(file.exists(save_path))
+
+  # Verify saved format is compatible with file-based reading path
+  saved_data <- readRDS(save_path)[[1]]
+  expect_true("susie_fit" %in% names(saved_data))
+  expect_true("variant_names" %in% names(saved_data))
+  expect_true(!is.null(saved_data$susie_fit$lbf_variable))
+  expect_true(!is.null(saved_data$susie_fit$V))
+
+  # Verify reusable: can be read back by coloc_wrapper via file-based path
+  result2 <- coloc_wrapper(
+    xqtl_file,
+    gwas_files = save_path,
+    xqtl_finemapping_obj = "susie_fit",
+    gwas_finemapping_obj = "susie_fit",
+    xqtl_varname_obj = c("susie_fit", "variant_names"),
+    gwas_varname_obj = "variant_names"
+  )
+  expect_true(all(c("summary", "results") %in% names(result2)))
+
+  file.remove(xqtl_file, save_path)
+})
+
+test_that("coloc_wrapper backward compatibility with gwas_files only", {
+  # This mirrors the existing test at line 228 but explicitly verifies
+  # that the default run_finemapping=FALSE works
+  input_data <- generate_mock_data_for_enrichment()
+  input_data$gwas_finemapped_data <- unlist(lapply(
+    input_data$gwas_finemapped_data, function(x) {
+      gsub("//", "/", tempfile(pattern = x, tmpdir = tempdir(), fileext = ".rds"))
+    }))
+  input_data$xqtl_finemapped_data <- gsub("//", "/", tempfile(pattern = "xqtl_file", tmpdir = tempdir(), fileext = ".rds"))
+  saveRDS(list(gene = list(susie_fit = generate_mock_susie_fit(seed = 1))), input_data$xqtl_finemapped_data)
+  for (i in 1:length(input_data$gwas_finemapped_data)) {
+    saveRDS(list(susie_fit = generate_mock_susie_fit(seed = i)), input_data$gwas_finemapped_data[i])
+  }
+  res <- coloc_wrapper(input_data$xqtl_finemapped_data, input_data$gwas_finemapped_data,
+                       xqtl_finemapping_obj = "susie_fit", gwas_finemapping_obj = NULL,
+                       xqtl_varname_obj = c("susie_fit", "variant_names"), gwas_varname_obj = c("variant_names"))
+  expect_true(all(names(res) %in% c("summary", "results", "priors", "analysis_region")))
+  file.remove(input_data$gwas_finemapped_data)
+  file.remove(input_data$xqtl_finemapped_data)
 })
 
 # ===========================================================================
@@ -856,8 +1078,17 @@ test_that("extract_ld_for_variants loads LD, aligns names, and subsets", {
   colnames(ld_mat) <- rownames(ld_mat) <- ld_variants
 
   local_mocked_bindings(
-    load_LD_matrix = function(meta_file, region) {
-      list(LD_matrix = ld_mat, LD_variants = ld_variants)
+    load_LD_matrix = function(meta_file, region, ...) {
+      ref_panel <- parse_variant_id(ld_variants)
+      ref_panel$variant_id <- ld_variants
+      variants_gr <- pecotmr:::.ref_panel_to_granges(ref_panel)
+      bm <- data.frame(
+        block_id = 1L, chrom = as.character(ref_panel$chrom[1]),
+        block_start = min(ref_panel$pos), block_end = max(ref_panel$pos),
+        size = length(ld_variants), start_idx = 1L, end_idx = length(ld_variants),
+        stringsAsFactors = FALSE
+      )
+      LDData(correlation = ld_mat, variants = variants_gr, block_metadata = bm)
     }
   )
 

@@ -104,7 +104,8 @@
 # Returns filtered weight_methods list and warns about removed methods.
 # @noRd
 .filter_zero_weight_methods <- function(weight_methods, twas_weights_res) {
-  is_all_zero <- vapply(twas_weights_res, function(w) all(w == 0, na.rm = TRUE), logical(1))
+  wl <- if (is(twas_weights_res, "TWASWeights")) getWeights(twas_weights_res) else twas_weights_res
+  is_all_zero <- vapply(wl, function(w) all(w == 0, na.rm = TRUE), logical(1))
   removed <- names(weight_methods)[is_all_zero]
   if (length(removed) > 0) {
     warning(sprintf(
@@ -612,20 +613,20 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1,
       return(x)
     })
   }
-  # Wrap in TWASWeights S4 object
+  # Create TWASWeights S4 object
   variant_ids <- if (!is.null(colnames(X))) colnames(X) else paste0("variant_", seq_len(ncol(X)))
   fits_list <- lapply(weights_list, function(w) attr(w, "fit"))
   has_any_fit <- any(!sapply(fits_list, is.null))
 
-  twas_result <- TWASWeights(
-    weights = weights_list,
+  # Strip fit attributes from weight matrices before storing in S4
+  clean_weights <- lapply(weights_list, function(w) { attr(w, "fit") <- NULL; w })
+
+  TWASWeights(
+    weights = clean_weights,
     variant_ids = variant_ids,
     fits = if (has_any_fit) fits_list else NULL,
     cv_performance = NULL
   )
-  # Attach the S4 object alongside the legacy list for backwards compatibility
-  attr(weights_list, "twas_weights_s4") <- twas_result
-  return(weights_list)
 }
 
 #' Predict outcomes using TWAS weights
@@ -652,7 +653,12 @@ twas_weights <- function(X, Y, weight_methods, num_threads = 1,
 #' predicted_outcomes <- twas_predict(X, weights_list)
 #' print(predicted_outcomes)
 twas_predict <- function(X, weights_list) {
-  setNames(lapply(weights_list, function(w) X %*% w), gsub("_weights", "_predicted", names(weights_list)))
+  if (is(weights_list, "TWASWeights")) {
+    wl <- getWeights(weights_list)
+  } else {
+    wl <- weights_list
+  }
+  setNames(lapply(wl, function(w) X %*% w), gsub("_weights", "_predicted", names(wl)))
 }
 
 #' Estimate Sparsity from mr.ash Mixture Proportions
@@ -674,15 +680,22 @@ twas_predict <- function(X, weights_list) {
 #' @return A scalar sparsity estimate (proportion of non-zero effects).
 #' @export
 estimate_sparsity <- function(weight_results) {
-  w <- weight_results[["mrash_weights"]]
-  if (is.null(w)) {
-    stop("mr.ash weights ('mrash_weights') not found in weight_results.")
-  }
-
-  fit <- attr(w, "fit")
-  if (is.null(fit) || is.null(fit$pi)) {
-    stop("mr.ash fit object not found. Run twas_weights() with retain_fits = TRUE ",
-         "and ensure mrash_weights is included.")
+  if (is(weight_results, "TWASWeights")) {
+    fit <- getFits(weight_results, "mrash_weights")
+    if (is.null(fit) || is.null(fit$pi)) {
+      stop("mr.ash fit object not found. Run twas_weights() with retain_fits = TRUE ",
+           "and ensure mrash_weights is included.")
+    }
+  } else {
+    w <- weight_results[["mrash_weights"]]
+    if (is.null(w)) {
+      stop("mr.ash weights ('mrash_weights') not found in weight_results.")
+    }
+    fit <- attr(w, "fit")
+    if (is.null(fit) || is.null(fit$pi)) {
+      stop("mr.ash fit object not found. Run twas_weights() with retain_fits = TRUE ",
+           "and ensure mrash_weights is included.")
+    }
   }
 
   # fit$pi[1] is the weight on the spike (sa2[1] = 0); 1 - pi[1] = non-null proportion
@@ -791,21 +804,36 @@ twas_weights_pipeline <- function(X,
 
     if (length(remaining_fn_names) > 0) {
       remaining_methods <- weight_methods[remaining_fn_names]
-      remaining_weights <- twas_weights(
+      remaining_tw <- twas_weights(
         X,
         y,
         weight_methods = remaining_methods,
         fitted_models = fitted_models,
         verbose = verbose
       )
-      res$twas_weights <- c(mrash_weights, remaining_weights)
+      # Combine two TWASWeights objects
+      combined_weights <- c(getWeights(mrash_weights), getWeights(remaining_tw))
+      combined_fits <- c(getFits(mrash_weights), getFits(remaining_tw))
+      res$twas_weights <- TWASWeights(
+        weights = combined_weights,
+        variant_ids = getVariantIds(mrash_weights),
+        fits = combined_fits
+      )
     } else {
       res$twas_weights <- mrash_weights
     }
 
     # Remove mr.ash if it was not in the original weight_methods
     if (!"mrash_weights" %in% names(weight_methods)) {
-      res$twas_weights[["mrash_weights"]] <- NULL
+      w_list <- getWeights(res$twas_weights)
+      f_list <- getFits(res$twas_weights)
+      w_list[["mrash_weights"]] <- NULL
+      if (!is.null(f_list)) f_list[["mrash_weights"]] <- NULL
+      res$twas_weights <- TWASWeights(
+        weights = w_list,
+        variant_ids = getVariantIds(res$twas_weights),
+        fits = if (length(f_list) > 0) f_list else NULL
+      )
     }
   } else {
     # Run all methods at once
@@ -821,11 +849,6 @@ twas_weights_pipeline <- function(X,
     elapsed <- toc(quiet = TRUE)
     message(sprintf("TWAS weights fitting done in %.1fs", elapsed$toc - elapsed$tic))
   }
-  res$twas_weights <- lapply(res$twas_weights, function(w) {
-    attr(w, "fit") <- NULL
-    w
-  })
-
   res$twas_predictions <- twas_predict(X, res$twas_weights)
 
   if (cv_folds > 1) {
@@ -928,7 +951,12 @@ twas_weights_pipeline <- function(X,
           filtered_cv$prediction <- filtered_cv$prediction[passing_pred_names]
 
           # Subset twas_weights to passing methods
-          filtered_weights <- res$twas_weights[passing_weight_names]
+          if (is(res$twas_weights, "TWASWeights")) {
+            wl <- getWeights(res$twas_weights)
+            filtered_weights <- wl[passing_weight_names]
+          } else {
+            filtered_weights <- res$twas_weights[passing_weight_names]
+          }
 
           if (verbose >= 1) {
             message("Computing ensemble TWAS weights via stacked regression ",
@@ -950,9 +978,19 @@ twas_weights_pipeline <- function(X,
 
           # Add ensemble weights alongside individual method weights
           if (!is.null(ens_result$ensemble_twas_weights)) {
-            res$twas_weights$ensemble_weights <- ens_result$ensemble_twas_weights
             ens_wt <- ens_result$ensemble_twas_weights
             if (!is.matrix(ens_wt)) ens_wt <- matrix(ens_wt, ncol = 1)
+            # Rebuild TWASWeights S4 with ensemble method added
+            tw <- res$twas_weights
+            new_weights <- c(getWeights(tw), list(ensemble_weights = ens_wt))
+            res$twas_weights <- new("TWASWeights",
+              weights = new_weights,
+              variant_ids = getVariantIds(tw),
+              methods = c(getMethodNames(tw), "ensemble_weights"),
+              fits = getFits(tw),
+              cv_performance = getCVPerformance(tw),
+              standardized = getStandardized(tw)
+            )
             res$twas_predictions$ensemble_predicted <- X %*% ens_wt
           }
           res$ensemble <- ens_result
@@ -1012,10 +1050,11 @@ twas_multivariate_weights_pipeline <- function(
     cv_threads = 1,
     verbose = 1) {
   copy_twas_results <- function(context_names, variant_names, twas_weight, twas_predictions) {
+    wl <- if (is(twas_weight, "TWASWeights")) getWeights(twas_weight) else twas_weight
     setNames(lapply(context_names, function(ctx) {
-      if (ctx %in% colnames(twas_weight[[1]])) {
+      if (ctx %in% colnames(wl[[1]])) {
         list(
-          twas_weights = lapply(twas_weight, function(wgts) wgts[, ctx]),
+          twas_weights = lapply(wl, function(wgts) wgts[, ctx]),
           twas_predictions = lapply(twas_predictions, function(pred) pred[, ctx]),
           variant_names = variant_names
         )
@@ -1640,5 +1679,286 @@ ensemble_weights <- function(cv_results, Y, twas_weight_list = NULL,
     method_coef = zeta,
     ensemble_twas_weights = ensemble_twas_wt,
     method_performance = method_rsq
+  )
+}
+
+# =============================================================================
+# Summary-statistics TWAS weight training pipeline
+# =============================================================================
+
+#' Train TWAS weights from summary statistics and LD reference
+#'
+#' Replaces the OTTERS pipeline with a properly integrated workflow that:
+#' (1) runs RSS QC on eQTL summary statistics, (2) trains weights via multiple
+#' RSS methods, and (3) extracts fine-mapping results from the shared SuSiE-RSS
+#' fit. Returns a \code{TWASWeights} S4 object with \code{standardized = TRUE}
+#' that feeds directly into \code{harmonize_twas} and \code{twas_analysis}.
+#'
+#' @param sumstats Data.frame with columns: \code{variant_id}, \code{A1},
+#'   \code{A2}, \code{chrom}, \code{pos}, and either \code{z} or both
+#'   \code{beta} and \code{se}.
+#' @param LD_data LDData S4 object, or a legacy list with \code{LD_matrix},
+#'   \code{LD_variants}, \code{ref_panel}. Can also be a plain correlation
+#'   matrix (variant IDs taken from row/colnames).
+#' @param n eQTL study sample size (scalar).
+#' @param methods Named list of RSS weight methods and their arguments.
+#'   Method names correspond to functions named
+#'   \code{<method>_weights(stat, LD, ...)}. Defaults include lassosum_rss,
+#'   prs_cs, sdpr, susie_rss, and susie_inf_rss.
+#' @param p_thresholds Numeric vector of p-value thresholds for P+T weights.
+#'   Set to NULL to skip.
+#' @param check_ld_method LD matrix repair method: \code{"eigenfix"} (default),
+#'   \code{"shrink"}, or NULL to skip.
+#' @param qc_method RSS QC method for eQTL data: \code{"slalom"},
+#'   \code{"dentist"}, or NULL/\code{"none"} to skip.
+#' @param keep_indel Whether to keep indels during QC. Default TRUE.
+#' @param pip_cutoff_to_skip PIP threshold for early stopping. Default 0 (off).
+#' @param impute Whether to run RAISS imputation. Default FALSE.
+#' @param impute_opts RAISS imputation parameters.
+#' @param var_y Phenotype variance. Default 1.
+#' @param verbose Verbosity level.
+#'
+#' @return A list with:
+#' \describe{
+#'   \item{twas_weights}{A \code{TWASWeights} S4 object with
+#'     \code{standardized = TRUE}.}
+#'   \item{finemapping_result}{A \code{FineMappingResult} S4 object from the
+#'     SuSiE-RSS fit, or NULL if no SuSiE-RSS method was used.}
+#'   \item{qc_summary}{List with outlier counts and QC metadata.}
+#' }
+#'
+#' @export
+twas_weights_sumstat_pipeline <- function(
+    sumstats, LD_data, n,
+    methods = list(
+      lassosum_rss = list(),
+      prs_cs = list(phi = 1e-4, n_iter = 1000, n_burnin = 500, thin = 5),
+      sdpr = list(iter = 1000, burn = 200, thin = 1, verbose = FALSE),
+      susie_rss = list(),
+      susie_inf_rss = list()
+    ),
+    p_thresholds = c(0.001, 0.05),
+    check_ld_method = "eigenfix",
+    qc_method = NULL,
+    keep_indel = TRUE,
+    pip_cutoff_to_skip = 0,
+    impute = TRUE,
+    impute_opts = list(rcond = 0.01, R2_threshold = 0.6,
+                       minimum_ld = 5, lamb = 0.01),
+    var_y = 1, verbose = 1) {
+
+  # -----------------------------------------------------------------------
+  # 1. RSS QC on eQTL summary statistics
+  # -----------------------------------------------------------------------
+  needs_qc <- !is.null(qc_method) && !identical(qc_method, "none")
+  if (needs_qc || impute || pip_cutoff_to_skip != 0) {
+    qc_result <- summary_stats_qc(
+      rss_input = list(sumstats = sumstats, n = n, var_y = var_y),
+      LD_data = LD_data,
+      keep_indel = keep_indel,
+      pip_cutoff_to_skip = pip_cutoff_to_skip,
+      qc_method = qc_method,
+      impute = impute,
+      impute_opts = impute_opts,
+      return_on_skip = "null"
+    )
+    if (is.null(qc_result) || isSkipped(qc_result)) {
+      return(list(twas_weights = NULL, finemapping_result = NULL,
+                  qc_summary = list(skipped = TRUE)))
+    }
+    sumstats <- getRSSInput(qc_result)$sumstats
+    qc_ld <- getLDData(qc_result)
+    LD_mat <- if (is.null(qc_ld)) NULL else if (hasGenotypes(qc_ld)) getGenotypes(qc_ld) else getCorrelation(qc_ld)
+    outlier_number <- getOutlierNumber(qc_result)
+  } else {
+    # No QC requested: extract LD matrix directly
+    if (is.matrix(LD_data)) {
+      LD_mat <- LD_data
+    } else if (is(LD_data, "LDData")) {
+      LD_mat <- getCorrelation(LD_data)
+    } else {
+      stop("LD_data must be a matrix or LDData object.")
+    }
+    outlier_number <- 0L
+  }
+
+  if (nrow(sumstats) < 2) {
+    return(list(twas_weights = NULL, finemapping_result = NULL,
+                qc_summary = list(skipped = TRUE, reason = "fewer than 2 variants")))
+  }
+
+  # -----------------------------------------------------------------------
+  # 2. Compute z-scores and build stat object
+  # -----------------------------------------------------------------------
+  if (is.null(sumstats$z)) {
+    if (!is.null(sumstats$beta) && !is.null(sumstats$se)) {
+      sumstats$z <- sumstats$beta / sumstats$se
+    } else {
+      stop("sumstats must have 'z' or ('beta' and 'se') columns.")
+    }
+  }
+
+  p <- nrow(sumstats)
+  z <- sumstats$z
+  variant_ids <- sumstats$variant_id
+  b <- z / sqrt(n)
+  stat <- list(b = b, cor = b, z = z, n = rep(n, p))
+
+  # Align LD matrix to sumstats variant order
+  if (!is.null(rownames(LD_mat)) && !is.null(variant_ids)) {
+    common <- intersect(variant_ids, rownames(LD_mat))
+    if (length(common) < p) {
+      idx <- match(common, variant_ids)
+      sumstats <- sumstats[idx, , drop = FALSE]
+      z <- sumstats$z
+      variant_ids <- sumstats$variant_id
+      b <- z / sqrt(n)
+      stat <- list(b = b, cor = b, z = z, n = rep(n, length(z)))
+      p <- length(z)
+    }
+    LD_mat <- LD_mat[variant_ids, variant_ids, drop = FALSE]
+  }
+
+  # -----------------------------------------------------------------------
+  # 3. LD eigenfix (optional)
+  # -----------------------------------------------------------------------
+  if (!is.null(check_ld_method)) {
+    ld_check <- check_ld(LD_mat, method = check_ld_method)
+    if (ld_check$method_applied != "none") {
+      if (verbose >= 1) {
+        message(sprintf("check_ld: repaired LD via '%s' (min eigenvalue was %.2e, %d negative).",
+                        ld_check$method_applied, ld_check$min_eigenvalue, ld_check$n_negative))
+      }
+    }
+    LD_mat <- ld_check$R
+  }
+
+  # -----------------------------------------------------------------------
+  # 4. Two-stage SuSiE-RSS (shared fit for susie_rss + susie_inf_rss)
+  # -----------------------------------------------------------------------
+  has_susie_rss <- "susie_rss" %in% names(methods)
+  has_susie_inf_rss <- "susie_inf_rss" %in% names(methods)
+  susie_fits <- NULL
+
+  if (has_susie_rss && has_susie_inf_rss) {
+    susie_args <- methods[["susie_rss"]]
+    susie_inf_args <- methods[["susie_inf_rss"]]
+    susie_fits <- fit_susie_inf_then_susie_rss(
+      z = z, R = LD_mat, n = n,
+      susie_inf_args = susie_inf_args,
+      susie_args = susie_args
+    )
+  }
+
+  # -----------------------------------------------------------------------
+  # 5. P+T weights
+  # -----------------------------------------------------------------------
+  results <- list()
+  if (!is.null(p_thresholds)) {
+    pvals <- pchisq(z^2, df = 1, lower.tail = FALSE)
+    for (thr in p_thresholds) {
+      selected <- pvals < thr
+      w <- ifelse(selected, stat$b, 0)
+      results[[paste0("PT_", thr)]] <- w
+    }
+  }
+
+  # -----------------------------------------------------------------------
+  # 6. RSS method dispatch
+  # -----------------------------------------------------------------------
+  susie_rss_fit_for_fm <- NULL
+
+  for (method_name in names(methods)) {
+    fn_name <- paste0(method_name, "_weights")
+    if (!exists(fn_name, mode = "function")) {
+      warning(sprintf("Method '%s' not found (looking for function '%s'). Skipping.",
+                      method_name, fn_name))
+      next
+    }
+
+    method_args <- methods[[method_name]]
+
+    # Build call arguments: separate pre-fitted objects from method_args
+    call_args <- list(stat = stat, LD = LD_mat)
+    if (method_name == "susie_rss" && !is.null(susie_fits)) {
+      call_args[["susie_rss_fit"]] <- susie_fits$susie
+    } else if (method_name == "susie_inf_rss" && !is.null(susie_fits)) {
+      call_args[["susie_inf_rss_fit"]] <- susie_fits$susie_inf
+    }
+
+    # SuSiE-RSS methods use method_args; others spread args directly
+    is_susie_rss_method <- method_name %in% c("susie_rss", "susie_inf_rss", "susie_ash_rss")
+    if (is_susie_rss_method) {
+      call_args[["method_args"]] <- method_args
+    } else {
+      call_args <- c(call_args, method_args)
+    }
+
+    tryCatch({
+      w <- do.call(fn_name, call_args)
+      # Capture retained fit for fine-mapping post-processing
+      if (method_name == "susie_rss" && !is.null(attr(w, "fit"))) {
+        susie_rss_fit_for_fm <- attr(w, "fit")
+      } else if (method_name == "susie_inf_rss" && is.null(susie_rss_fit_for_fm) && !is.null(attr(w, "fit"))) {
+        susie_rss_fit_for_fm <- attr(w, "fit")
+      }
+      results[[method_name]] <- as.numeric(w)
+    }, error = function(e) {
+      warning(sprintf("Method '%s' failed: %s", method_name, e$message))
+      results[[method_name]] <<- rep(0, p)
+    })
+  }
+
+  if (length(results) == 0) {
+    return(list(twas_weights = NULL, finemapping_result = NULL,
+                qc_summary = list(skipped = TRUE, reason = "all methods failed")))
+  }
+
+  # -----------------------------------------------------------------------
+  # 7. Fine-mapping from SuSiE-RSS fit (reuses the same fit)
+  # -----------------------------------------------------------------------
+  finemapping_result <- NULL
+  if (!is.null(susie_rss_fit_for_fm)) {
+    fm_fits <- list(susie_rss = susie_rss_fit_for_fm)
+    tryCatch({
+      fm_output <- postprocess_finemapping_fits(
+        fits = fm_fits,
+        data_x = LD_mat,
+        coverage = 0.95,
+        signal_cutoff = 0.025,
+        cs_input = "Xcorr"
+      )
+      if (!is.null(fm_output$finemapping_results$susie_rss$finemapping_result)) {
+        finemapping_result <- fm_output$finemapping_results$susie_rss$finemapping_result
+      }
+    }, error = function(e) {
+      warning(sprintf("Fine-mapping post-processing failed: %s", e$message))
+    })
+  }
+
+  # -----------------------------------------------------------------------
+  # 8. Package into TWASWeights S4
+  # -----------------------------------------------------------------------
+  weights_list <- lapply(results, function(w) {
+    matrix(w, ncol = 1, dimnames = list(variant_ids, NULL))
+  })
+
+  twas_wt <- TWASWeights(
+    weights = weights_list,
+    variant_ids = variant_ids,
+    standardized = TRUE,
+    cv_performance = NULL
+  )
+
+  list(
+    twas_weights = twas_wt,
+    finemapping_result = finemapping_result,
+    qc_summary = list(
+      skipped = FALSE,
+      n_variants_input = p,
+      n_variants_after_qc = nrow(sumstats),
+      outlier_number = outlier_number,
+      methods_succeeded = names(results)
+    )
   )
 }

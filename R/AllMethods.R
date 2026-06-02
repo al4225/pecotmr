@@ -26,7 +26,7 @@ NULL
 LDData <- function(correlation = NULL, genotype_handle = NULL,
                    snp_idx = NULL, variants, block_metadata,
                    n_ref = 0L) {
-  new("LDData",
+  obj <- new("LDData",
     correlation = correlation,
     genotype_handle = genotype_handle,
     snp_idx = snp_idx,
@@ -34,6 +34,8 @@ LDData <- function(correlation = NULL, genotype_handle = NULL,
     block_metadata = block_metadata,
     n_ref = as.integer(n_ref)
   )
+  validObject(obj)
+  obj
 }
 
 #' @rdname getCorrelation
@@ -43,15 +45,13 @@ setMethod("getCorrelation", "LDData", function(x) {
   if (is.null(x@genotype_handle)) {
     stop("No correlation matrix or genotype handle available")
   }
-  # Recompute from genotype handle
   if (is.list(x@genotype_handle)) {
-    # Multi-panel: compute from first handle
-    geno <- extractBlockGenotypes(x@genotype_handle[[1]], x@snp_idx)
-    X <- t(assay(geno, "dosage"))
-  } else {
-    geno <- extractBlockGenotypes(x@genotype_handle, x@snp_idx)
-    X <- t(assay(geno, "dosage"))
+    stop("Cannot compute single correlation matrix from mixture panels. ",
+         "Use getGenotypes() and compute LD per-panel, or pass X directly ",
+         "to susie_rss().")
   }
+  geno <- extractBlockGenotypes(x@genotype_handle, x@snp_idx)
+  X <- t(assay(geno, "dosage"))
   compute_LD(X, method = "sample")
 })
 
@@ -59,6 +59,8 @@ setMethod("getCorrelation", "LDData", function(x) {
 #' @export
 setMethod("getGenotypes", "LDData", function(x) {
   if (is.null(x@genotype_handle)) return(NULL)
+  # Plain matrix stored directly (e.g. from load_ld_sketch after filtering)
+  if (is.matrix(x@genotype_handle)) return(x@genotype_handle)
   if (is.list(x@genotype_handle)) {
     lapply(x@genotype_handle, function(h) {
       geno <- extractBlockGenotypes(h, x@snp_idx)
@@ -94,34 +96,14 @@ setMethod("getBlockMetadata", "LDData", function(x) {
   x@block_metadata
 })
 
-#' @title Convert LDData to Legacy List
-#' @description Convert an \code{LDData} object to the legacy list format
-#'   for backwards compatibility with internal functions that still expect
-#'   the old format.
-#' @param x An \code{LDData} object.
-#' @return A list with LD_variants, LD_matrix, ref_panel, block_metadata,
-#'   is_genotype.
-#' @keywords internal
-#' @noRd
-ld_data_to_list <- function(x) {
+#' @rdname getRefPanel
+#' @export
+setMethod("getRefPanel", "LDData", function(x) {
   mc <- as.data.frame(mcols(x@variants))
   mc$chrom <- as.character(seqnames(x@variants))
   mc$pos <- start(x@variants)
-  ref_panel <- mc
-
-  bm <- x@block_metadata
-  if (is(bm, "LDBlocks")) {
-    bm <- as.data.frame(bm@blocks)
-  }
-
-  list(
-    LD_variants = getVariantIds(x),
-    LD_matrix = if (!is.null(x@correlation)) x@correlation else getCorrelation(x),
-    ref_panel = ref_panel,
-    block_metadata = bm,
-    is_genotype = FALSE
-  )
-}
+  mc
+})
 
 # =============================================================================
 # Helper: build variant GRanges from ref_panel data.frame
@@ -183,7 +165,7 @@ RegionalData <- function(genotype_matrix, phenotypes, covariates,
                          scale_residuals = FALSE, maf = list(),
                          region = NULL, dropped_samples = list(),
                          Y_coordinates = NULL) {
-  new("RegionalData",
+  obj <- new("RegionalData",
     genotype_matrix = genotype_matrix,
     phenotypes = phenotypes,
     covariates = covariates,
@@ -193,6 +175,8 @@ RegionalData <- function(genotype_matrix, phenotypes, covariates,
     dropped_samples = dropped_samples,
     Y_coordinates = Y_coordinates
   )
+  validObject(obj)
+  obj
 }
 
 #' @rdname getResidualX
@@ -252,6 +236,149 @@ setMethod("getVariantInfo", "RegionalData", function(x) {
   colnames(x@genotype_matrix)
 })
 
+#' @rdname getPhenotypes
+#' @export
+setMethod("getPhenotypes", "RegionalData", function(x) x@phenotypes)
+
+#' @rdname getCovariates
+#' @export
+setMethod("getCovariates", "RegionalData", function(x) x@covariates)
+
+#' @rdname getGenotypeMatrix
+#' @export
+setMethod("getGenotypeMatrix", "RegionalData", function(x) x@genotype_matrix)
+
+#' @rdname getGenotypeMatrix
+#' @export
+setMethod("getGenotypeMatrix", "MultivariateRegionalData", function(x) x@genotype_matrix)
+
+# ----- MultivariateRegionalData constructor and accessors -----
+
+#' @title Construct a MultivariateRegionalData object
+#' @description Build a \code{MultivariateRegionalData} S4 object capturing
+#'   regional association data prepared for multivariate modeling (single
+#'   joint Y matrix across conditions).
+#' @param genotype_matrix Numeric matrix (samples x variants).
+#' @param Y_matrix Numeric matrix (samples x conditions).
+#' @param Y_scalar Numeric vector of per-condition scaling factors.
+#' @param dropped_samples Character vector or list of dropped sample IDs.
+#' @param region A \code{GRanges} or NULL.
+#' @param Y_coordinates A data.frame of phenotype coordinates, or NULL.
+#' @return A \code{MultivariateRegionalData} object.
+#' @export
+MultivariateRegionalData <- function(genotype_matrix, Y_matrix, Y_scalar,
+                                     dropped_samples = NULL,
+                                     region = NULL,
+                                     Y_coordinates = NULL) {
+  obj <- new("MultivariateRegionalData",
+             genotype_matrix = genotype_matrix,
+             Y_matrix = Y_matrix,
+             Y_scalar = as.numeric(Y_scalar),
+             dropped_samples = dropped_samples,
+             region = region,
+             Y_coordinates = Y_coordinates)
+  validObject(obj)
+  obj
+}
+
+#' @rdname getYMatrix
+#' @export
+setMethod("getYMatrix", "MultivariateRegionalData", function(x) x@Y_matrix)
+
+#' @rdname getYScalar
+#' @export
+setMethod("getYScalar", "MultivariateRegionalData", function(x) x@Y_scalar)
+
+#' @rdname getVariantInfo
+#' @export
+setMethod("getVariantInfo", "MultivariateRegionalData", function(x) {
+  colnames(x@genotype_matrix)
+})
+
+#' @rdname getChrom
+#' @export
+setMethod("getChrom", "MultivariateRegionalData", function(x) {
+  if (is.null(x@region)) return(NULL)
+  as.character(GenomicRanges::seqnames(x@region))[1]
+})
+
+#' @rdname getGrange
+#' @export
+setMethod("getGrange", "MultivariateRegionalData", function(x) {
+  if (is.null(x@region)) return(NULL)
+  as.character(c(GenomicRanges::start(x@region),
+                 GenomicRanges::end(x@region)))
+})
+
+#' @rdname getMaf
+#' @export
+setMethod("getMaf", "MultivariateRegionalData", function(x) {
+  apply(x@genotype_matrix, 2, compute_maf)
+})
+
+#' @rdname getXVariance
+#' @export
+setMethod("getXVariance", "MultivariateRegionalData", function(x, condition = 1L) {
+  matrixStats::colVars(x@genotype_matrix)
+})
+
+#' @rdname getXVariance
+#' @export
+setMethod("getXVariance", "RegionalData", function(x, condition = 1L) {
+  res <- getResidualX(x, condition)
+  matrixStats::colVars(res)
+})
+
+#' @rdname getChrom
+#' @export
+setMethod("getChrom", "RegionalData", function(x) {
+  if (is.null(x@region)) return(NULL)
+  as.character(GenomicRanges::seqnames(x@region))[1]
+})
+
+#' @rdname getGrange
+#' @export
+setMethod("getGrange", "RegionalData", function(x) {
+  if (is.null(x@region)) return(NULL)
+  as.character(c(GenomicRanges::start(x@region),
+                 GenomicRanges::end(x@region)))
+})
+
+#' @title Combine Two RegionalData Objects
+#' @description Concatenate two \code{RegionalData} objects by appending
+#'   their per-condition slots (phenotypes, covariates, maf, dropped_samples).
+#'   Used by multi-panel pipelines that load per-LD-panel data and aggregate
+#'   them. The \code{genotype_matrix} of \code{x} is retained as the
+#'   canonical genotype reference; the \code{region} is taken from \code{y}
+#'   (mirrors prior list-merge behavior).
+#' @param x First \code{RegionalData} object.
+#' @param y Second \code{RegionalData} object.
+#' @return A merged \code{RegionalData}.
+#' @export
+setMethod("c", "RegionalData", function(x, ...) {
+  others <- list(...)
+  if (length(others) == 0L) return(x)
+  result <- x
+  for (y in others) {
+    if (!is(y, "RegionalData")) stop("All arguments to c() must be RegionalData")
+    result <- RegionalData(
+      genotype_matrix = result@genotype_matrix,
+      phenotypes = c(result@phenotypes, y@phenotypes),
+      covariates = c(result@covariates, y@covariates),
+      scale_residuals = result@scale_residuals,
+      maf = c(result@maf, y@maf),
+      region = y@region,
+      dropped_samples = list(
+        X = c(result@dropped_samples$X, y@dropped_samples$X),
+        Y = c(result@dropped_samples$Y, y@dropped_samples$Y),
+        covar = c(result@dropped_samples$covar, y@dropped_samples$covar)
+      ),
+      Y_coordinates = result@Y_coordinates
+    )
+  }
+  result
+})
+
 # =============================================================================
 # FineMappingResult constructor and accessors
 # =============================================================================
@@ -267,13 +394,15 @@ setMethod("getVariantInfo", "RegionalData", function(x) {
 #' @export
 FineMappingResult <- function(variant_names, trimmed_fit, top_loci,
                               method, sumstats = NULL) {
-  new("FineMappingResult",
+  obj <- new("FineMappingResult",
     variant_names = variant_names,
     trimmed_fit = trimmed_fit,
     top_loci = top_loci,
     method = method,
     sumstats = sumstats
   )
+  validObject(obj)
+  obj
 }
 
 #' @rdname getPIP
@@ -389,17 +518,26 @@ setMethod("getEffects", "FineMappingResult", function(x) {
 #' @param variant_ids Character vector.
 #' @param fits Named list or NULL.
 #' @param cv_performance Named list or NULL.
+#' @param standardized Logical. If TRUE, weights are on the standardized
+#'   (correlation) scale and do not need variance scaling in harmonize_twas.
+#'   Defaults to FALSE (individual-level / raw genotype scale).
 #' @return A \code{TWASWeights} object.
 #' @export
 TWASWeights <- function(weights, variant_ids, fits = NULL,
-                        cv_performance = NULL) {
-  new("TWASWeights",
+                        cv_performance = NULL, standardized = FALSE,
+                        molecular_id = character(0), data_type = NULL) {
+  obj <- new("TWASWeights",
     weights = weights,
     variant_ids = variant_ids,
     methods = names(weights),
     fits = fits,
-    cv_performance = cv_performance
+    cv_performance = cv_performance,
+    standardized = standardized,
+    molecular_id = molecular_id,
+    data_type = data_type
   )
+  validObject(obj)
+  obj
 }
 
 #' @rdname getWeights
@@ -411,6 +549,141 @@ setMethod("getWeights", "TWASWeights", function(x, method = NULL) {
          paste(x@methods, collapse = ", "))
   x@weights[[method]]
 })
+
+#' @rdname getStandardized
+#' @export
+setMethod("getStandardized", "TWASWeights", function(x) x@standardized)
+
+#' @rdname getCVPerformance
+#' @export
+setMethod("getCVPerformance", "TWASWeights", function(x, method = NULL) {
+  if (is.null(method)) return(x@cv_performance)
+  x@cv_performance[[method]]
+})
+
+#' @rdname getFits
+#' @export
+setMethod("getFits", "TWASWeights", function(x, method = NULL) {
+  if (is.null(method)) return(x@fits)
+  x@fits[[method]]
+})
+
+#' @rdname getMethodNames
+#' @export
+setMethod("getMethodNames", "TWASWeights", function(x) x@methods)
+
+#' @rdname getVariantIds
+#' @export
+setMethod("getVariantIds", "TWASWeights", function(x) x@variant_ids)
+
+#' @rdname getMolecularId
+#' @export
+setMethod("getMolecularId", "TWASWeights", function(x) x@molecular_id)
+
+#' @rdname getDataType
+#' @export
+setMethod("getDataType", "TWASWeights", function(x) x@data_type)
+
+# =============================================================================
+# FineMappingResult additional accessors
+# =============================================================================
+
+#' @rdname getTrimmedFit
+#' @export
+setMethod("getTrimmedFit", "FineMappingResult", function(x) x@trimmed_fit)
+
+#' @rdname getVariantNames
+#' @export
+setMethod("getVariantNames", "FineMappingResult", function(x) x@variant_names)
+
+#' @rdname getTopLoci
+#' @export
+setMethod("getTopLoci", "FineMappingResult", function(x) x@top_loci)
+
+# =============================================================================
+# AlleleQCResult constructor and accessors
+# =============================================================================
+
+#' @title Construct an AlleleQCResult object
+#' @description Build an \code{AlleleQCResult} S4 object wrapping the post-QC
+#'   harmonized variants and the full per-variant QC diagnostics.
+#' @param harmonized_data Data frame of variants retained after allele QC.
+#' @param qc_summary Data frame of per-variant diagnostic columns.
+#' @return An \code{AlleleQCResult} object.
+#' @export
+AlleleQCResult <- function(harmonized_data, qc_summary) {
+  obj <- new("AlleleQCResult",
+      harmonized_data = as.data.frame(harmonized_data),
+      qc_summary = as.data.frame(qc_summary))
+  validObject(obj)
+  obj
+}
+
+#' @rdname getHarmonizedData
+#' @export
+setMethod("getHarmonizedData", "AlleleQCResult", function(x) x@harmonized_data)
+
+#' @rdname getQCSummary
+#' @export
+setMethod("getQCSummary", "AlleleQCResult", function(x) x@qc_summary)
+
+# =============================================================================
+# QCResult constructor and accessors
+# =============================================================================
+
+#' @title Construct a QCResult object
+#' @description Build a \code{QCResult} S4 object capturing the output of
+#'   summary-statistic QC. Validates that \code{ld_data} is an \code{LDData}
+#'   or NULL.
+#' @param ld_data An \code{LDData} or NULL.
+#' @param rss_input List with \code{sumstats}, \code{n}, \code{var_y}.
+#' @param preprocess List with \code{sumstats} and \code{ld_data}.
+#' @param outlier_number Integer count of LD-mismatch outliers removed.
+#' @param skipped Single logical indicating a short-circuit.
+#' @param skip_reason Character explanation; defaults to empty.
+#' @return A \code{QCResult} object.
+#' @export
+QCResult <- function(ld_data = NULL,
+                     rss_input = list(),
+                     preprocess = list(),
+                     outlier_number = 0L,
+                     skipped = FALSE,
+                     skip_reason = "") {
+  reason <- if (length(skip_reason) == 0L) "" else as.character(skip_reason)[[1]]
+  obj <- new("QCResult",
+      ld_data = ld_data,
+      rss_input = rss_input,
+      preprocess = preprocess,
+      outlier_number = as.integer(outlier_number),
+      skipped = isTRUE(skipped),
+      skip_reason = reason)
+  validObject(obj)
+  obj
+}
+
+#' @rdname getLDData
+#' @export
+setMethod("getLDData", "QCResult", function(x) x@ld_data)
+
+#' @rdname getRSSInput
+#' @export
+setMethod("getRSSInput", "QCResult", function(x) x@rss_input)
+
+#' @rdname getPreprocess
+#' @export
+setMethod("getPreprocess", "QCResult", function(x) x@preprocess)
+
+#' @rdname getOutlierNumber
+#' @export
+setMethod("getOutlierNumber", "QCResult", function(x) x@outlier_number)
+
+#' @rdname isSkipped
+#' @export
+setMethod("isSkipped", "QCResult", function(x) x@skipped)
+
+#' @rdname getSkipReason
+#' @export
+setMethod("getSkipReason", "QCResult", function(x) x@skip_reason)
 
 # =============================================================================
 # top_loci GRanges conversion
