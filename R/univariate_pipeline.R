@@ -26,6 +26,7 @@
 #' @param finemapping_extra_opts Additional options passed to \code{susieR::susie()}.
 #'   SuSiE-inf is always fitted with \code{refine = FALSE}; the ordinary SuSiE
 #'   fit keeps these options and is initialized with \code{model_init}.
+#' @param estimate_residual_variance Passed to \code{susieR::susie()}. Default is TRUE.
 #' @param add_susie_inf Whether to fit SuSiE-inf before ordinary SuSiE. Default
 #'   is TRUE for existing pipeline compatibility. If FALSE, ordinary SuSiE is
 #'   fitted directly and SuSiE-inf fitted objects/results are not returned.
@@ -63,6 +64,7 @@ univariate_analysis_pipeline <- function(
     coverage = c(0.95, 0.7, 0.5),
     min_abs_corr = 0.8,
     finemapping_extra_opts = list(refine = TRUE),
+    estimate_residual_variance = TRUE,
     add_susie_inf = TRUE,
     # TWAS weights and CV for TWAS weights
     twas_weights = TRUE,
@@ -126,7 +128,8 @@ univariate_analysis_pipeline <- function(
 
   susie_args <- modifyList(
     finemapping_extra_opts,
-    list(L = L, L_greedy = L_greedy, coverage = coverage[1])
+    list(L = L, L_greedy = L_greedy, coverage = coverage[1],
+         estimate_residual_variance = estimate_residual_variance)
   )
   if (isTRUE(add_susie_inf)) {
     message("Fitting SuSiE-inf model on input data ...")
