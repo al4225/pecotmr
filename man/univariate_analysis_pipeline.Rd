@@ -24,6 +24,7 @@ univariate_analysis_pipeline(
   coverage = c(0.95, 0.7, 0.5),
   min_abs_corr = 0.8,
   finemapping_extra_opts = list(refine = TRUE),
+  estimate_residual_variance = TRUE,
   add_susie_inf = TRUE,
   twas_weights = TRUE,
   sample_partition = NULL,
@@ -74,6 +75,8 @@ which is stricter than the susieR default of 0.5.}
 \item{finemapping_extra_opts}{Additional options passed to \code{susieR::susie()}.
 SuSiE-inf is always fitted with \code{refine = FALSE}; the ordinary SuSiE
 fit keeps these options and is initialized with \code{model_init}.}
+
+\item{estimate_residual_variance}{Passed to \code{susieR::susie()}. Default is TRUE.}
 
 \item{add_susie_inf}{Whether to fit SuSiE-inf before ordinary SuSiE. Default
 is TRUE for existing pipeline compatibility. If FALSE, ordinary SuSiE is
