@@ -439,6 +439,12 @@ region_data_to_susie_rss_input <- function(rss_input, LD_data) {
 #' @param n_sample Sample size. If 0, retrieved from the sumstat file.
 #' @param n_case Number of cases (for case-control studies).
 #' @param n_control Number of controls (for case-control studies).
+#' @param binary_trait_model How to handle case-control summary statistics.
+#'   The default \code{"rss"} uses the z-score RSS interface and does not pass
+#'   a phenotype variance to \code{susieR::susie_rss()}. Use \code{"ols"} only
+#'   when \code{beta} and \code{se} are from OLS on a centered 0/1 phenotype;
+#'   then \code{var_y} is computed from \code{n_case/n} and passed through to
+#'   select the \code{bhat/shat/var_y} sufficient-statistic interface.
 #' @param region Region string "chr:start-end" for tabix subsetting.
 #' @param skip_region Character vector of regions to skip (format "chrom:start-end").
 #' @param extract_region_name Gene/phenotype name to subset.
@@ -493,7 +499,9 @@ rss_analysis_pipeline <- function(
     ),
     impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
     pip_cutoff_to_skip = 0, R_finite = NULL, R_mismatch = NULL,
-    keep_indel = TRUE, comment_string = "#", diagnostics = FALSE) {
+    keep_indel = TRUE, comment_string = "#", diagnostics = FALSE,
+    binary_trait_model = c("rss", "ols")) {
+  binary_trait_model <- match.arg(binary_trait_model)
   if (!is(LD_data, "LDData")) {
     stop("LD_data must be an LDData object")
   }
@@ -502,7 +510,8 @@ rss_analysis_pipeline <- function(
     sumstat_path = sumstat_path, column_file_path = column_file_path,
     n_sample = n_sample, n_case = n_case, n_control = n_control,
     extract_region_name = extract_region_name, region = region,
-    region_name_col = region_name_col, comment_string = comment_string
+    region_name_col = region_name_col, comment_string = comment_string,
+    binary_trait_model = binary_trait_model
   )
 
   sumstats <- rss_input$sumstats

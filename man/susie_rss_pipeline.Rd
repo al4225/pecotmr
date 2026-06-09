@@ -72,7 +72,13 @@ variance inflation. Passed directly to susie_rss.}
 \item{R_mismatch}{LD mismatch correction method passed directly to susie_rss.
 Default NULL disables mismatch correction.}
 
-\item{...}{Additional parameters passed to susie_rss (e.g., var_y).}
+\item{...}{Additional parameters passed to susie_rss. Supplying
+\code{var_y} here, together with \code{beta} and \code{se} columns in
+\code{sumstats}, selects the \code{bhat/shat/var_y} sufficient-statistic
+interface. Without \code{var_y}, this wrapper uses the z-score RSS
+interface. For binary traits, \code{rss_analysis_pipeline()} can compute
+the observed-scale OLS \code{var_y} automatically via
+\code{binary_trait_model = "ols"}; ordinary RSS mode leaves it absent.}
 }
 \value{
 A list with post-processed SuSiE RSS results. The unified

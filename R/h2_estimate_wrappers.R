@@ -26,10 +26,10 @@ setMethod("estimateH2",
     n <- median(getN(sumstats))
     M <- nSnps(sumstats)
 
-    # Apply var_y correction for case-control studies
+    # Apply the legacy heritability-wrapper correction. This is separate from
+    # the SuSiE RSS binary_trait_model handling in the fine-mapping pipeline.
     var_y <- getVarY(sumstats)
     if (!is.null(var_y)) {
-      # Adjust effective N for liability scale: n_eff = n / var_y
       n <- n / var_y
     }
 

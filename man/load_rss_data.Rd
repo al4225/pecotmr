@@ -13,7 +13,8 @@ load_rss_data(
   region = NULL,
   extract_region_name = NULL,
   region_name_col = NULL,
-  comment_string = "#"
+  comment_string = "#",
+  binary_trait_model = c("rss", "ols")
 )
 }
 \arguments{
@@ -35,6 +36,17 @@ non-standard column names not recognized by MungeSumstats.}
 \item{region_name_col}{Filter this specific column for the extract_region_name.}
 
 \item{comment_string}{Comment sign in the column_mapping file, default is #}
+
+\item{binary_trait_model}{How to treat case-control sample counts. The
+default \code{"rss"} uses counts only to infer \code{n} and leaves
+\code{var_y = NULL}, so \code{susie_rss()} uses its z-score RSS interface
+on the standardized phenotype scale. Use \code{"ols"} only when
+\code{beta} and \code{se} come from ordinary least squares on a 0/1
+phenotype and the full \code{bhat/shat/var_y} sufficient-statistic
+interface is desired. In that case, if \code{phi = n_case / n}, centering gives
+\code{sum((y - phi)^2) = n * phi * (1 - phi)}, so the \code{susieR}
+\code{var_y = sum(y^2) / (n - 1)} input is
+\code{n / (n - 1) * phi * (1 - phi)}.}
 }
 \value{
 A list of rss_input, including the column-name-formatted summary statistics,
@@ -45,6 +57,7 @@ This function formats the input summary statistics dataframe with uniform column
 to fit into the SuSiE pipeline. Column standardization is performed via
 MungeSumstats::standardise_header(), with an optional custom column mapping file
 for additional non-standard names.
-Additionally, it extracts sample size, case number, control number, and variance of Y.
+Additionally, it extracts sample size, case number, control number, and
+optionally variance of Y for observed-scale binary OLS summary statistics.
 Missing values in n_sample, n_case, and n_control are backfilled with median values.
 }

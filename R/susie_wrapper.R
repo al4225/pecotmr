@@ -920,7 +920,13 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, run_allele
 #'   variance inflation. Passed directly to susie_rss.
 #' @param R_mismatch LD mismatch correction method passed directly to susie_rss.
 #'   Default NULL disables mismatch correction.
-#' @param ... Additional parameters passed to susie_rss (e.g., var_y).
+#' @param ... Additional parameters passed to susie_rss. Supplying
+#'   \code{var_y} here, together with \code{beta} and \code{se} columns in
+#'   \code{sumstats}, selects the \code{bhat/shat/var_y} sufficient-statistic
+#'   interface. Without \code{var_y}, this wrapper uses the z-score RSS
+#'   interface. For binary traits, \code{rss_analysis_pipeline()} can compute
+#'   the observed-scale OLS \code{var_y} automatically via
+#'   \code{binary_trait_model = "ols"}; ordinary RSS mode leaves it absent.
 #' @return A list with post-processed SuSiE RSS results. The unified
 #'   \code{top_loci} table contains rows from every requested method,
 #'   distinguished by the \code{method} column.
@@ -979,8 +985,39 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
     names(z) <- rownames(sumstats)
   }
 
-  common <- list(z = z, n = n, coverage = coverage,
-                 R_finite = R_finite, R_mismatch = R_mismatch, ...)
+  dots <- list(...)
+  var_y <- dots$var_y
+  dots$var_y <- NULL
+  if (!is.null(dots$bhat) || !is.null(dots$shat)) {
+    stop("Pass summary effects as 'beta' and 'se' columns in sumstats; ",
+         "susie_rss_pipeline constructs bhat and shat internally.")
+  }
+  if (!is.null(var_y)) {
+    if (is.null(sumstats$beta) || is.null(sumstats$se)) {
+      stop("Supplying var_y requires sumstats columns 'beta' and 'se'.")
+    }
+    if (isTRUE(attr(sumstats, "pecotmr_beta_se_from_z"))) {
+      stop("Supplying var_y requires observed beta and se columns; this ",
+           "sumstats object has beta/se placeholders derived from z-scores.")
+    }
+    if (length(var_y) != 1 || is.na(var_y) || !is.finite(var_y) ||
+        var_y <= 0) {
+      stop("var_y must be a positive finite scalar.")
+    }
+    if (is.list(X_mat) && !is.matrix(X_mat)) {
+      stop("var_y is not supported with multi-panel or list-backed X_mat. ",
+           "Use the z-score RSS interface instead.")
+    }
+    bhat <- sumstats$beta
+    shat <- sumstats$se
+    names(bhat) <- names(shat) <- names(z)
+    common <- c(list(bhat = bhat, shat = shat, var_y = var_y, n = n,
+                     coverage = coverage, R_finite = R_finite,
+                     R_mismatch = R_mismatch), dots)
+  } else {
+    common <- c(list(z = z, n = n, coverage = coverage,
+                     R_finite = R_finite, R_mismatch = R_mismatch), dots)
+  }
   if (!is.null(X_mat)) common$X <- X_mat else common$R <- LD_mat
 
   fit_one_susie_rss <- function() {

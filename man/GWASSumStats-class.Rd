@@ -27,8 +27,11 @@ Optional metadata columns: \code{MAF}, \code{INFO}, \code{BETA},
 
 \item{\code{trait_name}}{Character string for trait identifier.}
 
-\item{\code{var_y}}{Numeric, phenotype variance. For case-control studies this is
-\code{1 / (phi * (1 - phi))} where \code{phi = n_case / n}. For
-quantitative traits, typically 1 or NULL.}
+\item{\code{var_y}}{Numeric, phenotype variance. For observed-scale OLS on a
+centered 0/1 case-control trait, this is the \code{susieR}
+\code{sum(y^2) / (n - 1)} value after centering,
+\code{n / (n - 1) * phi * (1 - phi)}, where \code{phi = n_case / n}.
+Use it only with the full \code{bhat/shat/var_y} sufficient-statistic
+interface; z-score RSS analyses should leave it NULL.}
 }}
 
