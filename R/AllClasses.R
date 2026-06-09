@@ -90,9 +90,11 @@ setClass("GenotypeHandle",
 #'   \code{SE}, \code{P}.
 #' @slot genome Character string for genome build.
 #' @slot trait_name Character string for trait identifier.
-#' @slot var_y Numeric, phenotype variance. For case-control studies this is
-#'   \code{1 / (phi * (1 - phi))} where \code{phi = n_case / n}. For
-#'   quantitative traits, typically 1 or NULL.
+#' @slot var_y Numeric, phenotype variance. For observed-scale OLS on a
+#'   centered 0/1 case-control trait, this is the \code{susieR}
+#'   \code{y'y / (n - 1)} value, \code{n / (n - 1) * phi * (1 - phi)}, where
+#'   \code{phi = n_case / n}. Use it only with the full \code{bhat/shat/var_y}
+#'   sufficient-statistic interface; z-score RSS analyses should leave it NULL.
 #' @export
 setClass("GWASSumStats",
   representation(

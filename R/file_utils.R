@@ -1355,7 +1355,8 @@ standardise_sumstats_columns <- function(sumstats, column_file_path = NULL, comm
 #' to fit into the SuSiE pipeline. Column standardization is performed via
 #' MungeSumstats::standardise_header(), with an optional custom column mapping file
 #' for additional non-standard names.
-#' Additionally, it extracts sample size, case number, control number, and variance of Y.
+#' Additionally, it extracts sample size, case number, control number, and
+#' optionally variance of Y for observed-scale binary OLS summary statistics.
 #' Missing values in n_sample, n_case, and n_control are backfilled with median values.
 #'
 #' @param sumstat_path File path to the summary statistics.
@@ -1364,6 +1365,16 @@ standardise_sumstats_columns <- function(sumstats, column_file_path = NULL, comm
 #' @param n_sample User-specified sample size. If unknown, set as 0 to retrieve from the sumstat file.
 #' @param n_case User-specified number of cases.
 #' @param n_control User-specified number of controls.
+#' @param binary_trait_model How to treat case-control sample counts. The
+#'   default \code{"rss"} uses counts only to infer \code{n} and leaves
+#'   \code{var_y = NULL}, so \code{susie_rss()} uses its z-score RSS interface
+#'   on the standardized phenotype scale. Use \code{"ols"} only when
+#'   \code{beta} and \code{se} come from ordinary least squares on a 0/1
+#'   phenotype and the full \code{bhat/shat/var_y} sufficient-statistic
+#'   interface is desired. In that case, if \code{phi = n_case / n}, centering gives
+#'   \code{sum((y - phi)^2) = n * phi * (1 - phi)}, so the \code{susieR}
+#'   \code{var_y = y'y / (n - 1)} input is
+#'   \code{n / (n - 1) * phi * (1 - phi)}.
 #' @param region The region where tabix use to subset the input dataset.
 #' @param extract_region_name User-specified gene/phenotype name used to further subset the phenotype data.
 #' @param region_name_col Filter this specific column for the extract_region_name.
@@ -1375,7 +1386,9 @@ standardise_sumstats_columns <- function(sumstats, column_file_path = NULL, comm
 #' @importFrom magrittr %>%
 #' @export
 load_rss_data <- function(sumstat_path, column_file_path = NULL, n_sample = 0, n_case = 0, n_control = 0, region = NULL,
-                          extract_region_name = NULL, region_name_col = NULL, comment_string = "#") {
+                          extract_region_name = NULL, region_name_col = NULL, comment_string = "#",
+                          binary_trait_model = c("rss", "ols")) {
+  binary_trait_model <- match.arg(binary_trait_model)
   n_sample <- if (length(n_sample) == 1L && is.na(n_sample)) 0 else n_sample
   n_case <- if (length(n_case) == 1L && is.na(n_case)) 0 else n_case
   n_control <- if (length(n_control) == 1L && is.na(n_control)) 0 else n_control
@@ -1406,6 +1419,12 @@ load_rss_data <- function(sumstat_path, column_file_path = NULL, n_sample = 0, n
 
   # Standardize column names via MungeSumstats + optional custom mapping
   sumstats <- standardise_sumstats_columns(sumstats, column_file_path, comment_string)
+  has_observed_beta_se <- all(c("beta", "se") %in% colnames(sumstats))
+  if (binary_trait_model == "ols" && !has_observed_beta_se) {
+    stop("binary_trait_model = 'ols' requires observed beta and se columns ",
+         "from ordinary least squares on a 0/1 phenotype; z-only summary ",
+         "statistics should use binary_trait_model = 'rss'.")
+  }
   if (!"z" %in% colnames(sumstats) && all(c("beta", "se") %in%
     colnames(sumstats))) {
     sumstats$z <- sumstats$beta / sumstats$se
@@ -1413,6 +1432,9 @@ load_rss_data <- function(sumstat_path, column_file_path = NULL, n_sample = 0, n
   if (!"beta" %in% colnames(sumstats) && "z" %in% colnames(sumstats)) {
     sumstats$beta <- sumstats$z
     sumstats$se <- 1
+    attr(sumstats, "pecotmr_beta_se_from_z") <- TRUE
+  } else {
+    attr(sumstats, "pecotmr_beta_se_from_z") <- FALSE
   }
   for (col in c("n_sample", "n_case", "n_control")) {
     if (col %in% colnames(sumstats)) {
@@ -1421,23 +1443,40 @@ load_rss_data <- function(sumstat_path, column_file_path = NULL, n_sample = 0, n
       )
     }
   }
+  binary_var_y <- function(phi, n) {
+    if (length(phi) != 1 || is.na(phi) || !is.finite(phi) ||
+        phi <= 0 || phi >= 1) {
+      stop("Invalid case fraction for binary_trait_model = 'ols': ", phi,
+           ". Expected 0 < n_case / n < 1.")
+    }
+    if (is.null(n) || length(n) != 1 || is.na(n) || !is.finite(n) || n <= 1) {
+      stop("Invalid sample size for binary_trait_model = 'ols': ", n,
+           ". Expected n > 1.")
+    }
+    n / (n - 1) * phi * (1 - phi)
+  }
   if (n_sample != 0 && (n_case + n_control) != 0) {
     stop("Please provide sample size, or case number with control number, but not both")
   } else if (n_sample != 0) {
     n <- n_sample
   } else if ((n_case + n_control) != 0) {
     n <- n_case + n_control
-    phi <- n_case / n
-    var_y <- 1 / (phi * (1 - phi))
+    if (binary_trait_model == "ols") {
+      phi <- n_case / n
+      var_y <- binary_var_y(phi, n)
+    }
   } else {
     if ("n_sample" %in% colnames(sumstats)) {
       n <- median(sumstats$n_sample)
     } else if (all(c("n_case", "n_control") %in% colnames(sumstats))) {
-      n <- median(sumstats$n_case + sumstats$n_control)
-      phi <- median(sumstats$n_case / n)
-      var_y <- 1 / (phi * (1 - phi))
+      n_by_variant <- sumstats$n_case + sumstats$n_control
+      n <- median(n_by_variant)
+      if (binary_trait_model == "ols") {
+        phi <- median(sumstats$n_case / n_by_variant)
+        var_y <- binary_var_y(phi, n)
+      }
     } else {
-      warning("Sample size and variance of Y could not be determined from the summary statistics.")
+      warning("Sample size could not be determined from the summary statistics.")
       n <- NULL
     }
   }
@@ -1489,6 +1528,11 @@ load_rss_data <- function(sumstat_path, column_file_path = NULL, n_sample = 0, n
 #' @param n_samples User-specified sample size. If unknown, set as 0 to retrieve from the sumstat file.
 #' @param n_cases User-specified number of cases.
 #' @param n_controls User-specified number of controls.
+#' @param binary_trait_model How to treat case-control sample counts for summary
+#'   statistics. Passed to \code{load_rss_data()}; the default \code{"rss"}
+#'   keeps \code{var_y = NULL}, while \code{"ols"} computes the observed-scale
+#'   OLS \code{var_y} from \code{n_case / n} when true OLS \code{beta/se}
+#'   columns are available.
 #' @param region The region where tabix use to subset the input dataset.
 #' @param extract_sumstats_region_name User-specified gene/phenotype name used to further subset the phenotype data.
 #' @param sumstats_region_name_col Filter this specific column for the extract_sumstats_region_name.
@@ -1547,10 +1591,12 @@ load_multitask_regional_data <- function(region, # a string of chr:start-end for
                                          n_samples = 0,
                                          n_cases = 0,
                                          n_controls = 0,
+                                         binary_trait_model = c("rss", "ols"),
                                          extract_sumstats_region_name = NULL,
                                          sumstats_region_name_col = NULL,
                                          comment_string = "#",
                                          extract_coordinates = NULL) {
+  binary_trait_model <- match.arg(binary_trait_model)
   if (is.null(genotype_list) & is.null(sumstat_path_list)) {
     stop("Data load error. Please make sure at least one data set (sumstat_path_list or genotype_list) exists.")
   }
@@ -1649,7 +1695,8 @@ load_multitask_regional_data <- function(region, # a string of chr:start-end for
           sumstat_path = sumstat_path, column_file_path = column_file_path,
           n_sample = n_samples[ii], n_case = n_cases[ii], n_control = n_controls[ii],
           region = association_window, extract_region_name = extract_sumstats_region_name,
-          region_name_col = sumstats_region_name_col, comment_string = comment_string
+          region_name_col = sumstats_region_name_col, comment_string = comment_string,
+          binary_trait_model = binary_trait_model
         )
         if (nrow(tmp$sumstats) == 0){ return(NULL) }
         if (!("variant_id" %in% colnames(tmp$sumstats))) {

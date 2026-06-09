@@ -345,6 +345,81 @@ test_that("susie_rss_pipeline uses beta/se when z not provided", {
   }
 })
 
+test_that("susie_rss_pipeline defaults to z interface when var_y is absent", {
+  p <- 4
+  vnames <- paste0("chr1:", seq_len(p), ":A:G")
+  z <- setNames(rnorm(p), vnames)
+  R <- diag(p)
+  colnames(R) <- rownames(R) <- vnames
+  captured_susie_args <- NULL
+  local_mocked_bindings(
+    susie_rss = function(...) {
+      captured_susie_args <<- list(...)
+      list(pip = setNames(rep(0.01, p), vnames),
+           alpha = matrix(1 / p, nrow = 1, ncol = p),
+           lbf_variable = matrix(0, nrow = 1, ncol = p),
+           V = 1, sets = list(cs = NULL), niter = 1)
+    },
+    postprocess_finemapping_fits = function(...) list(),
+    format_finemapping_output = function(post, primary_method) list()
+  )
+
+  susie_rss_pipeline(
+    data.frame(variant_id = vnames, z = z, beta = z * 0.1, se = 0.1),
+    LD_mat = R, n = 1000)
+
+  expect_true("z" %in% names(captured_susie_args))
+  expect_false("var_y" %in% names(captured_susie_args))
+  expect_false("bhat" %in% names(captured_susie_args))
+  expect_false("shat" %in% names(captured_susie_args))
+})
+
+test_that("susie_rss_pipeline var_y in dots selects bhat shat interface", {
+  p <- 4
+  vnames <- paste0("chr1:", seq_len(p), ":A:G")
+  beta <- setNames(rnorm(p, sd = 0.1), vnames)
+  se <- setNames(rep(0.1, p), vnames)
+  R <- diag(p)
+  colnames(R) <- rownames(R) <- vnames
+  captured_susie_args <- NULL
+  local_mocked_bindings(
+    susie_rss = function(...) {
+      captured_susie_args <<- list(...)
+      list(pip = setNames(rep(0.01, p), vnames),
+           alpha = matrix(1 / p, nrow = 1, ncol = p),
+           lbf_variable = matrix(0, nrow = 1, ncol = p),
+           V = 1, sets = list(cs = NULL), niter = 1)
+    },
+    postprocess_finemapping_fits = function(...) list(),
+    format_finemapping_output = function(post, primary_method) list()
+  )
+
+  susie_rss_pipeline(
+    data.frame(variant_id = vnames, beta = beta, se = se),
+    LD_mat = R, n = 1000, var_y = 1000 / 999 * 0.25)
+
+  expect_false("z" %in% names(captured_susie_args))
+  expect_equal(captured_susie_args$bhat, beta)
+  expect_equal(captured_susie_args$shat, se)
+  expect_equal(captured_susie_args$var_y, 1000 / 999 * 0.25)
+})
+
+test_that("susie_rss_pipeline rejects var_y with beta se placeholders from z", {
+  p <- 4
+  vnames <- paste0("chr1:", seq_len(p), ":A:G")
+  sumstats <- data.frame(variant_id = vnames, z = rnorm(p))
+  sumstats$beta <- sumstats$z
+  sumstats$se <- 1
+  attr(sumstats, "pecotmr_beta_se_from_z") <- TRUE
+  R <- diag(p)
+  colnames(R) <- rownames(R) <- vnames
+
+  expect_error(
+    susie_rss_pipeline(sumstats, LD_mat = R, n = 1000, var_y = 0.25),
+    "placeholders derived from z-scores"
+  )
+})
+
 # =============================================================================
 # susie_weights
 # =============================================================================

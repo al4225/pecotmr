@@ -1400,7 +1400,7 @@ test_that("load_rss_data errors when both n_sample and n_case+n_control are prov
   file.remove(tmp_sumstat, tmp_col)
 })
 
-test_that("load_rss_data computes var_y from case/control counts", {
+test_that("load_rss_data uses case/control counts for n but not var_y by default", {
   tmp_sumstat <- tempfile(fileext = ".tsv")
   df <- data.frame(
     chrom = "chr1", pos = 100, b = 0.5, s = 0.1, stringsAsFactors = FALSE
@@ -1411,9 +1411,42 @@ test_that("load_rss_data computes var_y from case/control counts", {
 
   result <- suppressWarnings(load_rss_data(tmp_sumstat, tmp_col, n_case = 500, n_control = 500))
   expect_equal(result$n, 1000)
-  phi <- 500 / 1000
-  expect_equal(result$var_y, 1 / (phi * (1 - phi)))
+  expect_null(result$var_y)
   file.remove(tmp_sumstat, tmp_col)
+})
+
+test_that("load_rss_data computes observed-scale OLS var_y from case/control counts", {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = "chr1", pos = 100, b = 0.5, s = 0.1, stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tmp_sumstat)
+  tmp_col <- tempfile(fileext = ".txt")
+  writeLines(c("beta:b", "se:s"), tmp_col)
+
+  result <- suppressWarnings(load_rss_data(
+    tmp_sumstat, tmp_col, n_case = 500, n_control = 500,
+    binary_trait_model = "ols"))
+  expect_equal(result$n, 1000)
+  phi <- 500 / 1000
+  expect_equal(result$var_y, 1000 / 999 * phi * (1 - phi))
+  file.remove(tmp_sumstat, tmp_col)
+})
+
+test_that("load_rss_data OLS binary model requires observed beta and se", {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = "chr1", pos = 100, z = 2.1, stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tmp_sumstat)
+
+  expect_error(
+    suppressWarnings(load_rss_data(
+      tmp_sumstat, n_case = 500, n_control = 500,
+      binary_trait_model = "ols")),
+    "requires observed beta and se"
+  )
+  file.remove(tmp_sumstat)
 })
 
 test_that("load_rss_data returns NULL n when no sample size info available", {
@@ -1511,7 +1544,10 @@ test_that("load_rss_data extracts n from n_case and n_control columns", {
 
   result <- suppressWarnings(load_rss_data(tmp_sumstat, tmp_col))
   expect_equal(result$n, 1000)
-  expect_true(!is.null(result$var_y))
+  expect_null(result$var_y)
+  result_ols <- suppressWarnings(load_rss_data(
+    tmp_sumstat, tmp_col, binary_trait_model = "ols"))
+  expect_equal(result_ols$var_y, 1000 / 999 * 0.5 * 0.5)
   file.remove(tmp_sumstat, tmp_col)
 })
 
@@ -2097,14 +2133,23 @@ test_that("load_rss_data with n_sample returns sample size", {
   expect_null(result$var_y)
 })
 
-test_that("load_rss_data with n_case and n_control computes var_y", {
+test_that("load_rss_data with n_case and n_control defaults to RSS var_y", {
   skip_if_not_installed("MungeSumstats")
   sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
   result <- suppressMessages(load_rss_data(sumstat_path, n_case = 200, n_control = 300))
   expect_equal(result$n, 500)
-  expect_true(!is.null(result$var_y))
-  # var_y = 1 / (phi * (1 - phi)) where phi = 200/500 = 0.4
-  expect_equal(result$var_y, 1 / (0.4 * 0.6))
+  expect_null(result$var_y)
+})
+
+test_that("load_rss_data with n_case and n_control computes OLS var_y", {
+  skip_if_not_installed("MungeSumstats")
+  sumstat_path <- file.path(test_path("test_data"), "test_sumstats.tsv.gz")
+  result <- suppressMessages(load_rss_data(
+    sumstat_path, n_case = 200, n_control = 300,
+    binary_trait_model = "ols"))
+  expect_equal(result$n, 500)
+  # centered 0/1 y has y'y = n * phi * (1 - phi), and susieR expects y'y/(n - 1)
+  expect_equal(result$var_y, 500 / 499 * 0.4 * 0.6)
 })
 
 test_that("load_rss_data extracts n from sumstats N column", {
