@@ -105,6 +105,13 @@ Default NULL disables mismatch correction.}
 \item{comment_string}{Comment character for sumstat file (default "#").}
 
 \item{diagnostics}{Whether to include diagnostic info (default FALSE).}
+
+\item{binary_trait_model}{How to handle case-control summary statistics.
+The default \code{"rss"} uses the z-score RSS interface and does not pass
+a phenotype variance to \code{susieR::susie_rss()}. Use \code{"ols"} only
+when \code{beta} and \code{se} are from OLS on a centered 0/1 phenotype;
+then \code{var_y} is computed from \code{n_case/n} and passed through to
+select the \code{bhat/shat/var_y} sufficient-statistic interface.}
 }
 \value{
 A list with fine-mapping results and analyzed summary statistics.

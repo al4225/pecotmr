@@ -47,6 +47,17 @@ interface is desired. In that case, if \code{phi = n_case / n}, centering gives
 \item{region_name_col}{Filter this specific column for the extract_region_name.}
 
 \item{comment_string}{Comment sign in the column_mapping file, default is #}
+
+\item{binary_trait_model}{How to treat case-control sample counts. The
+default \code{"rss"} uses counts only to infer \code{n} and leaves
+\code{var_y = NULL}, so \code{susie_rss()} uses its z-score RSS interface
+on the standardized phenotype scale. Use \code{"ols"} only when
+\code{beta} and \code{se} come from ordinary least squares on a 0/1
+phenotype and the full \code{bhat/shat/var_y} sufficient-statistic
+interface is desired. In that case, if \code{phi = n_case / n}, centering gives
+\code{sum((y - phi)^2) = n * phi * (1 - phi)}, so the \code{susieR}
+\code{var_y = y'y / (n - 1)} input is
+\code{n / (n - 1) * phi * (1 - phi)}.}
 }
 \value{
 A list of rss_input, including the column-name-formatted summary statistics,
