@@ -29,17 +29,6 @@ non-standard column names not recognized by MungeSumstats.}
 
 \item{n_control}{User-specified number of controls.}
 
-\item{binary_trait_model}{How to treat case-control sample counts. The
-default \code{"rss"} uses counts only to infer \code{n} and leaves
-\code{var_y = NULL}, so \code{susie_rss()} uses its z-score RSS interface
-on the standardized phenotype scale. Use \code{"ols"} only when
-\code{beta} and \code{se} come from ordinary least squares on a 0/1
-phenotype and the full \code{bhat/shat/var_y} sufficient-statistic
-interface is desired. In that case, if \code{phi = n_case / n}, centering gives
-\code{sum((y - phi)^2) = n * phi * (1 - phi)}, so the \code{susieR}
-\code{var_y = sum(y^2) / (n - 1)} input is
-\code{n / (n - 1) * phi * (1 - phi)}.}
-
 \item{region}{The region where tabix use to subset the input dataset.}
 
 \item{extract_region_name}{User-specified gene/phenotype name used to further subset the phenotype data.}
@@ -56,7 +45,7 @@ on the standardized phenotype scale. Use \code{"ols"} only when
 phenotype and the full \code{bhat/shat/var_y} sufficient-statistic
 interface is desired. In that case, if \code{phi = n_case / n}, centering gives
 \code{sum((y - phi)^2) = n * phi * (1 - phi)}, so the \code{susieR}
-\code{var_y = y'y / (n - 1)} input is
+\code{var_y = sum(y^2) / (n - 1)} input is
 \code{n / (n - 1) * phi * (1 - phi)}.}
 }
 \value{

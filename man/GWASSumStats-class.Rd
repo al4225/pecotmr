@@ -34,3 +34,4 @@ centered 0/1 case-control trait, this is the \code{susieR}
 Use it only with the full \code{bhat/shat/var_y} sufficient-statistic
 interface; z-score RSS analyses should leave it NULL.}
 }}
+
