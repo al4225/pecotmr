@@ -33,6 +33,7 @@ load_multitask_regional_data(
   n_samples = 0,
   n_cases = 0,
   n_controls = 0,
+  binary_trait_model = c("rss", "ols"),
   extract_sumstats_region_name = NULL,
   sumstats_region_name_col = NULL,
   comment_string = "#",
@@ -91,6 +92,12 @@ load_multitask_regional_data(
 \item{n_cases}{User-specified number of cases.}
 
 \item{n_controls}{User-specified number of controls.}
+
+\item{binary_trait_model}{How to treat case-control sample counts for summary
+statistics. Passed to \code{load_rss_data()}; the default \code{"rss"}
+keeps \code{var_y = NULL}, while \code{"ols"} computes the observed-scale
+OLS \code{var_y} from \code{n_case / n} when true OLS \code{beta/se}
+columns are available.}
 
 \item{extract_sumstats_region_name}{User-specified gene/phenotype name used to further subset the phenotype data.}
 

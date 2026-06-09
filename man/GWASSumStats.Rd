@@ -14,9 +14,11 @@ SNP, CHR, BP, A1, A2, Z, N.}
 
 \item{genome}{Character, genome build (e.g., "hg19", "hg38").}
 
-\item{var_y}{Numeric, phenotype variance. For case-control studies this is
-\code{1 / (phi * (1 - phi))} where \code{phi = n_case / n}. NULL for
-quantitative traits.}
+\item{var_y}{Numeric, phenotype variance. For observed-scale OLS on a
+centered 0/1 case-control trait, this is \code{n / (n - 1) * phi *
+(1 - phi)}, where \code{phi = n_case / n}. Use it only with the full
+\code{bhat/shat/var_y} sufficient-statistic interface; z-score RSS
+analyses should leave it NULL.}
 }
 \value{
 A \code{GWASSumStats} object.
