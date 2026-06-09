@@ -1373,7 +1373,7 @@ standardise_sumstats_columns <- function(sumstats, column_file_path = NULL, comm
 #'   phenotype and the full \code{bhat/shat/var_y} sufficient-statistic
 #'   interface is desired. In that case, if \code{phi = n_case / n}, centering gives
 #'   \code{sum((y - phi)^2) = n * phi * (1 - phi)}, so the \code{susieR}
-#'   \code{var_y = y'y / (n - 1)} input is
+#'   \code{var_y = sum(y^2) / (n - 1)} input is
 #'   \code{n / (n - 1) * phi * (1 - phi)}.
 #' @param region The region where tabix use to subset the input dataset.
 #' @param extract_region_name User-specified gene/phenotype name used to further subset the phenotype data.

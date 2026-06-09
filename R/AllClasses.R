@@ -92,9 +92,10 @@ setClass("GenotypeHandle",
 #' @slot trait_name Character string for trait identifier.
 #' @slot var_y Numeric, phenotype variance. For observed-scale OLS on a
 #'   centered 0/1 case-control trait, this is the \code{susieR}
-#'   \code{y'y / (n - 1)} value, \code{n / (n - 1) * phi * (1 - phi)}, where
-#'   \code{phi = n_case / n}. Use it only with the full \code{bhat/shat/var_y}
-#'   sufficient-statistic interface; z-score RSS analyses should leave it NULL.
+#'   \code{sum(y^2) / (n - 1)} value after centering,
+#'   \code{n / (n - 1) * phi * (1 - phi)}, where \code{phi = n_case / n}.
+#'   Use it only with the full \code{bhat/shat/var_y} sufficient-statistic
+#'   interface; z-score RSS analyses should leave it NULL.
 #' @export
 setClass("GWASSumStats",
   representation(

@@ -28,7 +28,8 @@ rss_analysis_pipeline(
   R_mismatch = NULL,
   keep_indel = TRUE,
   comment_string = "#",
-  diagnostics = FALSE
+  diagnostics = FALSE,
+  binary_trait_model = c("rss", "ols")
 )
 }
 \arguments{
@@ -46,6 +47,13 @@ computed only for QC stages that require a correlation matrix.}
 \item{n_case}{Number of cases (for case-control studies).}
 
 \item{n_control}{Number of controls (for case-control studies).}
+
+\item{binary_trait_model}{How to handle case-control summary statistics.
+The default \code{"rss"} uses the z-score RSS interface and does not pass
+a phenotype variance to \code{susieR::susie_rss()}. Use \code{"ols"} only
+when \code{beta} and \code{se} are from OLS on a centered 0/1 phenotype;
+then \code{var_y} is computed from \code{n_case/n} and passed through to
+select the \code{bhat/shat/var_y} sufficient-statistic interface.}
 
 \item{region}{Region string "chr:start-end" for tabix subsetting.}
 
