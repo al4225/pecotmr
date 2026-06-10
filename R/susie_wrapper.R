@@ -215,7 +215,8 @@ fit_susie_inf_then_susie_rss <- function(z, R, n, args = list(),
 #' @param data_y Phenotype vector/matrix or summary statistics. Default NULL.
 #' @param X_scalar Scaling factor for genotype effects. Default 1.
 #' @param y_scalar Scaling factor for phenotype effects. Default 1.
-#' @param maf Minor allele frequencies. Default NULL.
+#' @param af Effect-allele frequencies (exported as the \code{af} column; never
+#'   MAF). Default NULL.
 #' @param coverage Primary credible-set coverage.
 #' @param secondary_coverage Additional credible-set coverages.
 #' @param signal_cutoff PIP cutoff for including non-CS variants in top loci.

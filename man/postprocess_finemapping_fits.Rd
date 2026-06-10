@@ -35,6 +35,9 @@ input used for credible-set purity and correlations.}
 
 \item{y_scalar}{Scaling factor for phenotype effects. Default 1.}
 
+\item{af}{Effect-allele frequencies (exported as the \code{af} column; never
+MAF). Default NULL.}
+
 \item{coverage}{Primary credible-set coverage.}
 
 \item{secondary_coverage}{Additional credible-set coverages.}
@@ -46,8 +49,6 @@ input used for credible-set purity and correlations.}
 \item{prior_eff_tol}{Tolerance for retaining effects by prior variance.}
 
 \item{min_abs_corr}{Minimum absolute correlation for credible-set purity.}
-
-\item{maf}{Minor allele frequencies. Default NULL.}
 }
 \value{
 A list with \code{finemapping_results} (per-method post-processed
