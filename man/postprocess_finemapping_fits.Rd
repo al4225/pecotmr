@@ -10,7 +10,7 @@ postprocess_finemapping_fits(
   data_y = NULL,
   X_scalar = 1,
   y_scalar = 1,
-  maf = NULL,
+  af = NULL,
   coverage = NULL,
   secondary_coverage = c(0.7, 0.5),
   signal_cutoff = 0.1,
@@ -35,7 +35,7 @@ input used for credible-set purity and correlations.}
 
 \item{y_scalar}{Scaling factor for phenotype effects. Default 1.}
 
-\item{maf}{Minor allele frequencies. Default NULL.}
+\item{af}{Effect-allele frequencies (exported as the af column; never MAF). Default NULL.}
 
 \item{coverage}{Primary credible-set coverage.}
 

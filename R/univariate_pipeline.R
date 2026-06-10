@@ -8,7 +8,12 @@
 #' @param Y A vector of phenotype measurements.
 #' @param X_scalar A scalar or vector to rescale X to its original scale.
 #' @param Y_scalar A scalar to rescale Y to its original scale.
-#' @param maf A vector of minor allele frequencies for each variant in X.
+#' @param maf A vector of minor allele frequencies for each variant in X. Used
+#'   only for \code{maf_cutoff} filtering; never exported.
+#' @param af Optional vector of directional effect-allele frequencies (frequency
+#'   of \code{a1}) aligned to the columns of X. When supplied it is exported as
+#'   the \code{top_loci$af} column; when NULL, \code{af} is \code{NA_real_}.
+#'   Default NULL.
 #' @param X_variance Optional variance of X. Default is NULL.
 #' @param other_quantities A list of other quantities to be carried into fine-mapping post-processing. Default is an empty list.
 #' @param region Optional \code{"chr:start-end"} string for the analysis region. Default is NULL.
@@ -60,6 +65,7 @@ univariate_analysis_pipeline <- function(
     X,
     Y,
     maf,
+    af = NULL,
     X_scalar = 1,
     Y_scalar = 1,
     X_variance = NULL,
@@ -95,6 +101,13 @@ univariate_analysis_pipeline <- function(
   if (nrow(X) != length(Y)) stop("X and Y must have the same number of rows/length")
   if (!is.numeric(maf) || length(maf) != ncol(X)) stop("maf must be a numeric vector with length equal to the number of columns in X")
   if (any(maf < 0 | maf > 1)) stop("maf values must be between 0 and 1")
+  # af (directional effect-allele frequency) is optional. When supplied it must
+  # align with X columns; it is exported as top_loci$af. maf stays directionless
+  # and is used only for maf_cutoff filtering.
+  if (!is.null(af)) {
+    if (!is.numeric(af) || length(af) != ncol(X)) stop("af must be NULL or a numeric vector with length equal to the number of columns in X")
+    if (any(af < 0 | af > 1, na.rm = TRUE)) stop("af values must be between 0 and 1")
+  }
   if (!is.numeric(X_scalar) || (length(X_scalar) != 1 && length(X_scalar) != ncol(X))) stop("X_scalar must be a numeric scalar or vector with length equal to the number of columns in X")
   if (!is.numeric(Y_scalar) || length(Y_scalar) != 1) stop("Y_scalar must be a numeric scalar")
   if (!is.numeric(L) || L <= 0) stop("L must be a positive integer")
@@ -153,6 +166,7 @@ univariate_analysis_pipeline <- function(
     variants_kept <- filter_variants_by_ld_reference(colnames(X), ld_reference_meta_file)
     X <- X[, variants_kept$data, drop = FALSE]
     maf <- maf[variants_kept$idx]
+    if (!is.null(af)) af <- af[variants_kept$idx]
     if (length(X_scalar) > 1) X_scalar <- X_scalar[variants_kept$idx]
   }
 
@@ -161,6 +175,7 @@ univariate_analysis_pipeline <- function(
     X_filtered <- filter_X(X, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, maf = maf, X_variance = X_variance)
     kept_indices <- match(colnames(X_filtered), colnames(X))
     maf <- maf[kept_indices]
+    if (!is.null(af)) af <- af[kept_indices]
     if (length(X_scalar) > 1) X_scalar <- X_scalar[kept_indices]
     X <- X_filtered
   }
@@ -241,7 +256,7 @@ univariate_analysis_pipeline <- function(
     data_y = Y,
     X_scalar = X_scalar,
     y_scalar = Y_scalar,
-    maf = maf,
+    af = af,
     coverage = coverage[1],
     secondary_coverage = if (length(coverage) > 1) coverage[-1] else NULL,
     signal_cutoff = signal_cutoff,

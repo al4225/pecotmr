@@ -923,7 +923,7 @@ if (!exists(".make_univariate_data", inherits = FALSE)) {
 .UNIFIED_TOP_LOCI_COLS <- c(
   "#chr", "start", "end", "a1", "a2",
   "variant", "gene", "event",
-  "n", "maf", "beta", "se",
+  "n", "af", "beta", "se",
   "pip", "posterior_effect_mean", "posterior_effect_se",
   "cs_95", "cs_70", "cs_50", "cs_95_purity",
   "method", "grange_start", "grange_end"
@@ -990,13 +990,13 @@ if (!exists(".make_univariate_data", inherits = FALSE)) {
 }
 
 .run_build_top_loci <- function(inp, method = "susie", signal_cutoff = 0.05,
-                                sumstats = NULL, maf = NULL,
+                                sumstats = NULL, af = NULL,
                                 other_quantities = NULL,
                                 region = NULL) {
   build_top_loci(
     fit = inp$fit, cs_tables = inp$cs_tables,
     variant_names = inp$variant_names,
-    sumstats = sumstats, maf = maf,
+    sumstats = sumstats, af = af,
     method = method, signal_cutoff = signal_cutoff,
     data_x = inp$data_x, data_y = inp$data_y,
     other_quantities = other_quantities,
@@ -1023,7 +1023,8 @@ test_that("build_top_loci returns the exact 22-column schema in order with stabl
   expect_true(is.character(out$gene))
   expect_true(is.character(out$event))
   expect_true(is.integer(out$n))
-  expect_true(is.numeric(out$maf))
+  expect_true(is.numeric(out$af))
+  expect_false("maf" %in% names(out))
   expect_true(is.numeric(out$pip))
   expect_true(is.numeric(out$posterior_effect_mean))
   expect_true(is.numeric(out$posterior_effect_se))
@@ -1047,7 +1048,7 @@ test_that("build_top_loci emits 22 columns in the fixed order on a non-empty fit
   out <- .run_build_top_loci(inp, method = "susie",
                              sumstats = list(betahat = c(0.2, -0.1),
                                              sebetahat = c(0.05, 0.04)),
-                             maf = c(0.10, 0.25),
+                             af = c(0.10, 0.25),
                              other_quantities = other_q,
                              region = "chr10:10823338-14348298")
   expect_equal(names(out), .UNIFIED_TOP_LOCI_COLS)

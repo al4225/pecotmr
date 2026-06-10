@@ -1384,6 +1384,110 @@ test_that("load_rss_data creates beta from z when beta is missing", {
   file.remove(tmp_sumstat, tmp_col)
 })
 
+# ---- rss-top-loci-af: effect-allele frequency (af) propagation --------------
+
+.write_rss_inputs <- function(df, col_lines) {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  readr::write_tsv(df, tmp_sumstat)
+  tmp_col <- tempfile(fileext = ".txt")
+  writeLines(col_lines, tmp_col)
+  list(sumstat = tmp_sumstat, col = tmp_col)
+}
+
+test_that("load_rss_data exports declared effect-allele af", {
+  # `eaf_col` is a custom (MungeSumstats-unrecognized) header so the column-file
+  # mapping `af:eaf_col` is what declares effect-allele frequency.
+  df <- data.frame(
+    chrom = c("chr1", "chr1"), pos = c(100, 200),
+    A1 = c("G", "T"), A2 = c("A", "C"),
+    effect = c(0.5, -0.3), stderr = c(0.1, 0.15), n = c(1000, 1000),
+    eaf_col = c(0.21, 0.78), stringsAsFactors = FALSE
+  )
+  f <- .write_rss_inputs(df, c("beta:effect", "se:stderr", "n_sample:n", "af:eaf_col"))
+  result <- suppressWarnings(load_rss_data(f$sumstat, f$col))
+  expect_true("af" %in% colnames(result$sumstats))
+  expect_equal(result$sumstats$af, c(0.21, 0.78), tolerance = 1e-10)
+  expect_false(any(is.na(result$sumstats$af)))
+  file.remove(f$sumstat, f$col)
+})
+
+test_that("load_rss_data sets af = NA and warns once when af is not declared", {
+  df <- data.frame(
+    chrom = c("chr1", "chr1"), pos = c(100, 200),
+    A1 = c("G", "T"), A2 = c("A", "C"),
+    effect = c(0.5, -0.3), stderr = c(0.1, 0.15), n = c(1000, 1000),
+    stringsAsFactors = FALSE
+  )
+  f <- .write_rss_inputs(df, c("beta:effect", "se:stderr", "n_sample:n"))
+  expect_warning(load_rss_data(f$sumstat, f$col), "not declared")
+  result <- suppressWarnings(load_rss_data(f$sumstat, f$col))
+  expect_true("af" %in% colnames(result$sumstats))
+  expect_true(all(is.na(result$sumstats$af)))
+  file.remove(f$sumstat, f$col)
+})
+
+test_that("load_rss_data emits a distinct warning when af is declared but missing", {
+  df <- data.frame(
+    chrom = c("chr1", "chr1"), pos = c(100, 200),
+    A1 = c("G", "T"), A2 = c("A", "C"),
+    effect = c(0.5, -0.3), stderr = c(0.1, 0.15), n = c(1000, 1000),
+    eaf_col = c(NA_real_, NA_real_), stringsAsFactors = FALSE
+  )
+  f <- .write_rss_inputs(df, c("beta:effect", "se:stderr", "n_sample:n", "af:eaf_col"))
+  expect_warning(load_rss_data(f$sumstat, f$col), "declared but its values")
+  result <- suppressWarnings(load_rss_data(f$sumstat, f$col))
+  expect_true(all(is.na(result$sumstats$af)))
+  file.remove(f$sumstat, f$col)
+})
+
+test_that("load_rss_data never exports an ambiguous frequency column as af", {
+  # FRQ is mapped by MungeSumstats to the internal `maf`, never to `af`.
+  df <- data.frame(
+    chrom = c("chr1", "chr1"), pos = c(100, 200),
+    A1 = c("G", "T"), A2 = c("A", "C"),
+    effect = c(0.5, -0.3), stderr = c(0.1, 0.15), n = c(1000, 1000),
+    FRQ = c(0.3, 0.6), stringsAsFactors = FALSE
+  )
+  f <- .write_rss_inputs(df, c("beta:effect", "se:stderr", "n_sample:n"))
+  result <- suppressWarnings(load_rss_data(f$sumstat, f$col))
+  expect_true(all(is.na(result$sumstats$af)))
+  # the ambiguous values did not leak into af
+  expect_false(isTRUE(all.equal(result$sumstats$af, c(0.3, 0.6))))
+  file.remove(f$sumstat, f$col)
+})
+
+test_that("explicit af declaration wins over MungeSumstats (recognized freq header)", {
+  # `effect_allele_frequency` is a header MungeSumstats recognizes and would
+  # otherwise absorb into the internal `maf`. An explicit `af:...` mapping must
+  # win, exporting the effect-allele frequency as `af` (not `maf`).
+  df <- data.frame(
+    chrom = c("chr1", "chr1"), pos = c(100, 200),
+    A1 = c("G", "T"), A2 = c("A", "C"),
+    effect_allele_frequency = c(0.12, 0.44),
+    beta = c(0.5, -0.3), se = c(0.1, 0.15), n = c(1000, 1000),
+    stringsAsFactors = FALSE
+  )
+  f <- .write_rss_inputs(df, c("n_sample:n", "af:effect_allele_frequency"))
+  result <- suppressWarnings(load_rss_data(f$sumstat, f$col))
+  expect_true("af" %in% colnames(result$sumstats))
+  expect_false("maf" %in% colnames(result$sumstats))
+  expect_equal(result$sumstats$af, c(0.12, 0.44), tolerance = 1e-10)
+  file.remove(f$sumstat, f$col)
+})
+
+test_that("load_rss_data does not export af when no effect allele is resolvable", {
+  # af declared via column file, but no A1 / variant id to tie it to a direction.
+  df <- data.frame(
+    chrom = c("chr1", "chr1"), pos = c(100, 200),
+    effect = c(0.5, -0.3), stderr = c(0.1, 0.15), n = c(1000, 1000),
+    eaf_col = c(0.21, 0.78), stringsAsFactors = FALSE
+  )
+  f <- .write_rss_inputs(df, c("beta:effect", "se:stderr", "n_sample:n", "af:eaf_col"))
+  result <- suppressWarnings(load_rss_data(f$sumstat, f$col))
+  expect_true(all(is.na(result$sumstats$af)))
+  file.remove(f$sumstat, f$col)
+})
+
 test_that("load_rss_data errors when both n_sample and n_case+n_control are provided", {
   tmp_sumstat <- tempfile(fileext = ".tsv")
   df <- data.frame(

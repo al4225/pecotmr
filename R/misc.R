@@ -31,6 +31,20 @@ compute_maf <- function(geno) {
   return(min(f, 1 - f))
 }
 
+#' Derive minor-allele frequency from effect-allele frequency
+#'
+#' MAF is an internal QC/filtering quantity only; it is never exported. Use this
+#' helper wherever a MAF is needed from a (directional) effect-allele frequency
+#' \code{af}, instead of carrying a separate \code{maf} column. NA in -> NA out.
+#'
+#' @param af Numeric vector of effect-allele frequencies in \code{[0, 1]}.
+#' @return Numeric vector \code{pmin(af, 1 - af)}, preserving NA.
+#' @noRd
+maf_from_af <- function(af) {
+  af <- as.numeric(af)
+  pmin(af, 1 - af)
+}
+
 compute_missing <- function(geno) {
   miss <- sum(is.na(geno)) / length(geno)
   return(miss)

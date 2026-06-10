@@ -230,7 +230,7 @@ fit_susie_inf_then_susie_rss <- function(z, R, n, args = list(),
 #' @export
 postprocess_finemapping_fits <- function(fits, data_x, data_y = NULL,
                                          X_scalar = 1, y_scalar = 1,
-                                         maf = NULL, coverage = NULL,
+                                         af = NULL, coverage = NULL,
                                          secondary_coverage = c(0.7, 0.5),
                                          signal_cutoff = 0.1,
                                          other_quantities = NULL,
@@ -251,7 +251,7 @@ postprocess_finemapping_fits <- function(fits, data_x, data_y = NULL,
     fit <- .set_finemapping_fit_class(fits[[method]], method)
     postprocess_finemapping_fit(
       fit, method = method, data_x = data_x, data_y = data_y,
-      X_scalar = X_scalar, y_scalar = y_scalar, maf = maf,
+      X_scalar = X_scalar, y_scalar = y_scalar, af = af,
       coverage = coverage, secondary_coverage = secondary_coverage,
       signal_cutoff = signal_cutoff, other_quantities = other_quantities,
       region = region,
@@ -316,7 +316,7 @@ postprocess_finemapping_fit.susiF <- function(fit, method = "fsusie", cs_input =
 
 .postprocess_finemapping_fit_common <- function(fit, method, data_x, data_y = NULL,
                                                 X_scalar = 1, y_scalar = 1,
-                                                maf = NULL, coverage = NULL,
+                                                af = NULL, coverage = NULL,
                                                 secondary_coverage = c(0.7, 0.5),
                                                 signal_cutoff = 0.1,
                                                 other_quantities = NULL,
@@ -335,7 +335,7 @@ postprocess_finemapping_fit.susiF <- function(fit, method = "fsusie", cs_input =
   )
   top_loci <- build_top_loci(
     fit, cs_tables, variant_names = variant_names, sumstats = sumstats,
-    maf = maf, method = method, signal_cutoff = signal_cutoff,
+    af = af, method = method, signal_cutoff = signal_cutoff,
     data_x = data_x, data_y = data_y, other_quantities = other_quantities,
     region = region
   )
@@ -489,7 +489,7 @@ compute_cs_table <- function(fit, data_x, coverage, cs_input = c("X", "Xcorr", "
 #' single \code{top_loci} returned by \code{format_finemapping_output()}.
 #'
 #' Output columns, in order: \code{#chr}, \code{start}, \code{end}, \code{a1},
-#' \code{a2}, \code{variant}, \code{gene}, \code{event}, \code{n}, \code{maf},
+#' \code{a2}, \code{variant}, \code{gene}, \code{event}, \code{n}, \code{af},
 #' \code{beta}, \code{se}, \code{pip}, \code{posterior_effect_mean},
 #' \code{posterior_effect_se}, \code{cs_95}, \code{cs_70}, \code{cs_50},
 #' \code{cs_95_purity}, \code{method}, \code{grange_start}, \code{grange_end}.
@@ -513,7 +513,11 @@ compute_cs_table <- function(fit, data_x, coverage, cs_input = c("X", "Xcorr", "
 #'   (\code{chr:pos:A2:A1}).
 #' @param sumstats Optional marginal-association summary (\code{betahat},
 #'   \code{sebetahat}) filling \code{beta} / \code{se}.
-#' @param maf Optional numeric vector of minor-allele frequencies.
+#' @param af Optional numeric vector of effect-allele frequencies (frequency of
+#'   the final effect allele / \code{a1} after allele harmonization against the
+#'   LD/reference variants). Exported directly as the \code{af} column. MAF is
+#'   never exported; derive it from \code{af} at filter time. Default NULL ->
+#'   \code{af = NA_real_}.
 #' @param method Method name (e.g. \code{"susie"}, \code{"susie_inf"}). Required.
 #' @param signal_cutoff PIP cutoff for retaining PIP-only (non-CS) variants.
 #' @param data_x Optional regional genotype matrix.
@@ -525,7 +529,7 @@ compute_cs_table <- function(fit, data_x, coverage, cs_input = c("X", "Xcorr", "
 #'   or an empty data frame if nothing is retained.
 #' @export
 build_top_loci <- function(fit, cs_tables, variant_names, sumstats = NULL,
-                           maf = NULL, method, signal_cutoff = 0.1,
+                           af = NULL, method, signal_cutoff = 0.1,
                            data_x = NULL, data_y = NULL,
                            other_quantities = NULL,
                            region = NULL) {
@@ -631,7 +635,7 @@ build_top_loci <- function(fit, cs_tables, variant_names, sumstats = NULL,
     gene                  = rep(fit_gene, n_keys),
     event                 = rep(fit_event, n_keys),
     n                     = rep(fit_n, n_keys),
-    maf                   = pick(maf),
+    af                    = pick(af),
     beta                  = pick(sumstats$betahat),
     se                    = pick(sumstats$sebetahat),
     pip                   = as.numeric(fit$pip[v_idx]),
@@ -679,7 +683,7 @@ build_top_loci <- function(fit, cs_tables, variant_names, sumstats = NULL,
     gene                  = character(),
     event                 = character(),
     n                     = integer(),
-    maf                   = numeric(),
+    af                    = numeric(),
     beta                  = numeric(),
     se                    = numeric(),
     pip                   = numeric(),
@@ -1094,10 +1098,16 @@ susie_rss_pipeline <- function(sumstats, LD_mat = NULL, X_mat = NULL, n = NULL,
     pp_cs_input <- "X"
   }
 
+  # Effect-allele frequency for top_loci$af. Carried only when the harmonized
+  # sumstats declares it (effect-allele AF); aligned to the z / variant order.
+  # MAF is never exported here; it is an internal QC quantity derived from af.
+  af <- if (!is.null(sumstats$af)) as.numeric(sumstats$af) else NULL
+
   post <- postprocess_finemapping_fits(
     fits = fitted_models,
     data_x = data_x,
     data_y = list(z = z),
+    af = af,
     coverage = coverage,
     secondary_coverage = secondary_coverage,
     signal_cutoff = signal_cutoff,

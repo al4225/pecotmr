@@ -9,7 +9,7 @@ build_top_loci(
   cs_tables,
   variant_names,
   sumstats = NULL,
-  maf = NULL,
+  af = NULL,
   method,
   signal_cutoff = 0.1,
   data_x = NULL,
@@ -31,7 +31,11 @@ build_top_loci(
 \item{sumstats}{Optional marginal-association summary (\code{betahat},
 \code{sebetahat}) filling \code{beta} / \code{se}.}
 
-\item{maf}{Optional numeric vector of minor-allele frequencies.}
+\item{af}{Optional numeric vector of effect-allele frequencies (frequency of
+the final effect allele / \code{a1} after allele harmonization against the
+LD/reference variants). Exported directly as the \code{af} column. MAF is
+never exported; derive it from \code{af} at filter time. Default NULL ->
+\code{af = NA_real_}.}
 
 \item{method}{Method name (e.g. \code{"susie"}, \code{"susie_inf"}). Required.}
 
@@ -58,7 +62,7 @@ single \code{top_loci} returned by \code{format_finemapping_output()}.
 }
 \details{
 Output columns, in order: \code{#chr}, \code{start}, \code{end}, \code{a1},
-\code{a2}, \code{variant}, \code{gene}, \code{event}, \code{n}, \code{maf},
+\code{a2}, \code{variant}, \code{gene}, \code{event}, \code{n}, \code{af},
 \code{beta}, \code{se}, \code{pip}, \code{posterior_effect_mean},
 \code{posterior_effect_se}, \code{cs_95}, \code{cs_70}, \code{cs_50},
 \code{cs_95_purity}, \code{method}, \code{grange_start}, \code{grange_end}.

@@ -1317,18 +1317,15 @@ standardise_sumstats_columns <- function(sumstats, column_file_path = NULL, comm
   )
   # Make a copy to avoid in-place modification by MungeSumstats
   sumstats_copy <- data.frame(sumstats, check.names = FALSE)
-  # Use MungeSumstats for comprehensive column standardization
-  sumstats_copy <- standardise_header(
-    sumstats_copy, return_list = FALSE, uppercase_unmapped = FALSE
-  )
-  # Rename MungeSumstats standard names to pecotmr conventions
-  for (ms_name in names(ms_to_pecotmr)) {
-    idx <- which(colnames(sumstats_copy) == ms_name)
-    if (length(idx) > 0) {
-      colnames(sumstats_copy)[idx] <- ms_to_pecotmr[ms_name]
-    }
-  }
-  # Apply additional custom column mapping if provided
+
+  # Read the explicit user column mapping first. User declarations are
+  # AUTHORITATIVE: a column the user mapped (e.g. `af:effect_allele_frequency`)
+  # must not be silently overridden by MungeSumstats (which would otherwise
+  # absorb `effect_allele_frequency` into `FRQ` -> `maf` before the custom map
+  # could run). We therefore shield each declared source column behind a unique
+  # placeholder, let MungeSumstats standardize everything else, then restore the
+  # declared columns to their requested standard names last.
+  placeholders <- character(0)
   if (!is.null(column_file_path)) {
     if (!file.exists(column_file_path)) {
       stop("Column mapping file not found: ", column_file_path)
@@ -1342,8 +1339,30 @@ standardise_sumstats_columns <- function(sumstats, column_file_path = NULL, comm
     for (i in seq_len(nrow(column_data))) {
       idx <- which(colnames(sumstats_copy) == column_data$original[i])
       if (length(idx) > 0) {
-        colnames(sumstats_copy)[idx] <- column_data$standard[i]
+        ph <- paste0(".pecotmr_decl_", i)
+        colnames(sumstats_copy)[idx] <- ph
+        placeholders[[ph]] <- column_data$standard[i]
       }
+    }
+  }
+
+  # Use MungeSumstats for comprehensive column standardization (shielded
+  # declared columns pass through untouched as unmapped placeholders).
+  sumstats_copy <- standardise_header(
+    sumstats_copy, return_list = FALSE, uppercase_unmapped = FALSE
+  )
+  # Rename MungeSumstats standard names to pecotmr conventions
+  for (ms_name in names(ms_to_pecotmr)) {
+    idx <- which(colnames(sumstats_copy) == ms_name)
+    if (length(idx) > 0) {
+      colnames(sumstats_copy)[idx] <- ms_to_pecotmr[ms_name]
+    }
+  }
+  # Restore user-declared columns to their requested standard names (last word).
+  for (ph in names(placeholders)) {
+    idx <- which(colnames(sumstats_copy) == ph)
+    if (length(idx) > 0) {
+      colnames(sumstats_copy)[idx] <- placeholders[[ph]]
     }
   }
   as.data.frame(sumstats_copy)
@@ -1419,6 +1438,41 @@ load_rss_data <- function(sumstat_path, column_file_path = NULL, n_sample = 0, n
 
   # Standardize column names via MungeSumstats + optional custom mapping
   sumstats <- standardise_sumstats_columns(sumstats, column_file_path, comment_string)
+
+  # ---- Effect-allele frequency (af) propagation -------------------------------
+  # `af` is the frequency of the effect allele / A1 and is exported (after
+  # harmonization) as top_loci$af. It becomes available ONLY through an explicit
+  # column-file mapping to the standard name `af` (MungeSumstats never emits
+  # `af`; it maps FRQ -> `maf`, which stays an internal QC quantity). Ambiguous
+  # frequency headers therefore never silently become `af`. The effect allele
+  # must also be resolvable (an A1 column or an allele-bearing variant id), or
+  # the declared frequency cannot be tied to a direction and is not exported.
+  af_declared <- "af" %in% colnames(sumstats)
+  has_effect_allele <- "A1" %in% colnames(sumstats) ||
+    any(c("variant_id", "variant") %in% colnames(sumstats))
+  if (af_declared && has_effect_allele) {
+    sumstats$af <- suppressWarnings(as.numeric(sumstats$af))
+    if (all(is.na(sumstats$af))) {
+      warning("Effect-allele frequency column 'af' was declared but its values ",
+              "are missing/unusable; top_loci$af will be NA and MAF filtering ",
+              "will be skipped.")
+    }
+  } else {
+    if (af_declared && !has_effect_allele) {
+      warning("Effect-allele frequency 'af' was declared but no effect allele ",
+              "(A1 / allele-bearing variant id) is available to tie it to a ",
+              "direction; it will not be exported. top_loci$af will be NA and ",
+              "MAF filtering will be skipped.")
+    } else {
+      warning("Effect-allele frequency (af) was not declared in the column ",
+              "file; top_loci$af will be NA and MAF filtering will be skipped. ",
+              "Generic frequency headers (FRQ/AF/allele_frequency) are kept as ",
+              "internal MAF only and are never exported as af.")
+    }
+    sumstats$af <- NA_real_
+  }
+  # ----------------------------------------------------------------------------
+
   has_observed_beta_se <- all(c("beta", "se") %in% colnames(sumstats))
   if (binary_trait_model == "ols" && !has_observed_beta_se) {
     stop("binary_trait_model = 'ols' requires observed beta and se columns ",
