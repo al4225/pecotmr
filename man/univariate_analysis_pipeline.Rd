@@ -8,6 +8,7 @@ univariate_analysis_pipeline(
   X,
   Y,
   maf,
+  af = NULL,
   X_scalar = 1,
   Y_scalar = 1,
   X_variance = NULL,
@@ -40,7 +41,13 @@ univariate_analysis_pipeline(
 
 \item{Y}{A vector of phenotype measurements.}
 
-\item{maf}{A vector of minor allele frequencies for each variant in X.}
+\item{maf}{A vector of minor allele frequencies for each variant in X. Used
+only for \code{maf_cutoff} filtering; never exported.}
+
+\item{af}{Optional vector of directional effect-allele frequencies (frequency
+of \code{a1}) aligned to the columns of X. When supplied it is exported as
+the \code{top_loci$af} column; when NULL, \code{af} is \code{NA_real_}.
+Default NULL.}
 
 \item{X_scalar}{A scalar or vector to rescale X to its original scale.}
 
