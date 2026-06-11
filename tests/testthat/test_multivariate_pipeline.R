@@ -150,7 +150,7 @@ test_that("multivariate_analysis_pipeline errors when maf has wrong length", {
     multivariate_analysis_pipeline(
       X = d$X, Y = d$Y, maf = c(0.1, 0.2), pip_cutoff_to_skip = 0
     ),
-    "maf must be a numeric vector with length equal to the number of columns in X"
+    "maf must be NULL or a numeric vector with length equal to the number of columns in X"
   )
 })
 
@@ -162,7 +162,7 @@ test_that("multivariate_analysis_pipeline errors when maf is not numeric", {
     multivariate_analysis_pipeline(
       X = d$X, Y = d$Y, maf = rep("0.1", ncol(d$X)), pip_cutoff_to_skip = 0
     ),
-    "maf must be a numeric vector"
+    "maf must be NULL or a numeric vector"
   )
 })
 
@@ -372,15 +372,17 @@ test_that("pipeline warns and returns empty list when Y has single column", {
   expect_equal(length(result), 0)
 })
 
-test_that("multivariate_analysis_pipeline errors when maf is NULL", {
+test_that("multivariate_analysis_pipeline errors when maf is NULL and maf_cutoff is set without af", {
   skip_if(!requireNamespace("mvsusieR", quietly = TRUE),
           "mvsusieR not installed, input validation unreachable")
   d <- make_mv_data()
+  # maf is now optional; it only errors if maf_cutoff needs a frequency and
+  # neither maf nor af is supplied.
   expect_error(
     multivariate_analysis_pipeline(
-      X = d$X, Y = d$Y, maf = NULL, pip_cutoff_to_skip = 0
+      X = d$X, Y = d$Y, maf_cutoff = 0.01, pip_cutoff_to_skip = 0
     ),
-    "maf must be a numeric vector"
+    "maf_cutoff is set but neither"
   )
 })
 
@@ -625,4 +627,48 @@ test_that("pipeline propagates outcome_names from mvsusie through post-processin
   expect_true("af" %in% colnames(result$top_loci))
   expect_false("maf" %in% colnames(result$top_loci))
   expect_true(all(is.na(result$top_loci$af)))
+})
+
+test_that("multivariate exports a supplied af and derives the filtering MAF from it", {
+  skip_if(!requireNamespace("mvsusieR", quietly = TRUE), "mvsusieR not installed")
+  skip_if(!requireNamespace("susieR", quietly = TRUE), "susieR not installed")
+  d <- make_mv_data()
+  r <- ncol(d$Y); p <- ncol(d$X); L <- 5
+  vnames <- colnames(d$X); cnames <- colnames(d$Y)
+  fake_coef <- matrix(rnorm((p + 1) * r), nrow = p + 1, ncol = r)
+  prior_U <- list(udd_1 = matrix(0.5, r, r) + 0.5 * diag(r), udd_2 = diag(r))
+  for (k in seq_along(prior_U)) rownames(prior_U[[k]]) <- colnames(prior_U[[k]]) <- cnames
+  prior_mats <- list(U = prior_U, w = c(udd_1 = 0.5, udd_2 = 0.5))
+  fake_w0 <- c("udd_1_a" = 0.4, "udd_2_a" = 0.4, "null" = 0.2)
+  local_mocked_bindings(
+    mrmash_wrapper = function(X, Y, ...) list(V = diag(ncol(Y)), w0 = fake_w0,
+                                              w1 = matrix(0.1, nrow = ncol(X), ncol = 1)),
+  )
+  local_mocked_bindings(
+    mvsusie = function(...) list(
+      pip = setNames(rep(0.5, p), vnames),   # high PIP -> retained as top_loci rows
+      alpha = matrix(1 / p, nrow = L, ncol = p),
+      lbf_variable = matrix(0, nrow = L, ncol = p),
+      V = rep(1, L), sets = list(cs = NULL, requested_coverage = 0.95),
+      niter = 10, outcome_names = cnames,
+      conditional_lfsr = array(0.5, dim = c(L, p, r))
+    ),
+    create_mixture_prior = function(...) list(matrices = prior_U, weights = c(0.5, 0.5)),
+    coef.mvsusie = function(...) fake_coef,
+    .package = "mvsusieR"
+  )
+  af <- setNames(seq(0.1, 0.5, length.out = p), vnames)   # directional, aligned to X cols
+  run <- function(...) multivariate_analysis_pipeline(
+    X = d$X, Y = d$Y, ..., pip_cutoff_to_skip = 0, signal_cutoff = 0.025,
+    data_driven_prior_matrices = prior_mats, twas_weights = FALSE)
+  res_af  <- run(af = af)
+  res_maf <- run(maf = pmin(af, 1 - af))
+  # af supplied -> exported with real values; no maf column
+  expect_true(nrow(res_af$top_loci) > 0)
+  expect_false("maf" %in% colnames(res_af$top_loci))
+  expect_true(all(!is.na(res_af$top_loci$af)))
+  expect_true(all(res_af$top_loci$af %in% af))
+  # af-derived MAF filters identically to supplying that maf (same fit, only af differs)
+  cols <- setdiff(names(res_af$top_loci), "af")
+  expect_equal(res_af$top_loci[cols], res_maf$top_loci[cols])
 })
