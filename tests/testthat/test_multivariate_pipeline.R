@@ -619,4 +619,10 @@ test_that("pipeline propagates outcome_names from mvsusie through post-processin
   trimmed <- getTrimmedFit(result$finemapping_result)
   expect_equal(trimmed$coef, fake_coef[-1, , drop = FALSE])
   expect_equal(dim(trimmed$clfsr), c(L, p, r))
+  # rss-top-loci-af regression: top_loci exports `af`, not the directionless
+  # `maf`. The multivariate path has no proven directional AF, so it must NOT
+  # relabel its filtering `maf` as `af` — `af` is present but NA, no `maf` column.
+  expect_true("af" %in% colnames(result$top_loci))
+  expect_false("maf" %in% colnames(result$top_loci))
+  expect_true(all(is.na(result$top_loci$af)))
 })

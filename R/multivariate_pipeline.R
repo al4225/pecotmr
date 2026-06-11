@@ -432,7 +432,10 @@ multivariate_analysis_pipeline <- function(
     data_y = NULL,
     X_scalar = 1,
     y_scalar = 1,
-    maf = maf,
+    # `maf` here is directionless (used only for filtering above); do NOT export
+    # it as `af` (effect-allele frequency). Leave `af` NULL -> top_loci$af = NA
+    # until the multivariate path carries a proven directional AF (follow-up,
+    # mirroring the univariate `af-single-source` work).
     coverage = coverage[1],
     secondary_coverage = sec_coverage,
     signal_cutoff = signal_cutoff,
