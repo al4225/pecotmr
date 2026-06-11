@@ -7,7 +7,8 @@
 multivariate_analysis_pipeline(
   X,
   Y,
-  maf,
+  maf = NULL,
+  af = NULL,
   X_variance = NULL,
   other_quantities = list(),
   region = NULL,
@@ -41,7 +42,17 @@ multivariate_analysis_pipeline(
 
 \item{Y}{A matrix of phenotype measurements, representing samples and columns represent conditions.}
 
-\item{maf}{A list of vectors for minor allele frequencies for each variant in X.}
+\item{maf}{Optional vector of minor allele frequencies for each variant in X,
+used ONLY for \code{maf_cutoff} filtering and never exported. When \code{af}
+is supplied the filtering MAF is derived from it (\code{min(af, 1 - af)}) and
+a supplied \code{maf} is ignored (with a warning if they disagree). Default
+NULL; if neither \code{maf} nor \code{af} is supplied and \code{maf_cutoff}
+is set, the call errors.}
+
+\item{af}{Optional vector of directional effect-allele frequencies (frequency
+of \code{a1}) aligned to the columns of X. When supplied it is exported as
+the \code{top_loci$af} column; when NULL, \code{af} is \code{NA_real_}.
+Default NULL.}
 
 \item{ld_reference_meta_file}{An optional path to a file containing linkage disequilibrium reference data. If provided, variants in X are filtered based on this reference.}
 

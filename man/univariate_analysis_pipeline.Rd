@@ -7,7 +7,7 @@
 univariate_analysis_pipeline(
   X,
   Y,
-  maf,
+  maf = NULL,
   af = NULL,
   X_scalar = 1,
   Y_scalar = 1,
@@ -41,8 +41,13 @@ univariate_analysis_pipeline(
 
 \item{Y}{A vector of phenotype measurements.}
 
-\item{maf}{A vector of minor allele frequencies for each variant in X. Used
-only for \code{maf_cutoff} filtering; never exported.}
+\item{maf}{Optional vector of minor allele frequencies for each variant in X,
+used ONLY for \code{maf_cutoff} filtering and never exported. \code{af} is
+the single source of truth: when \code{af} is supplied the filtering MAF is
+derived from it (\code{min(af, 1 - af)}) and a supplied \code{maf} is
+ignored (with a warning if they disagree). Default NULL; if neither
+\code{maf} nor \code{af} is supplied and \code{maf_cutoff} is set, the call
+errors.}
 
 \item{af}{Optional vector of directional effect-allele frequencies (frequency
 of \code{a1}) aligned to the columns of X. When supplied it is exported as

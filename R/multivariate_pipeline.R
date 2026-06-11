@@ -137,7 +137,16 @@ region_data_to_mvsusie_rss_input <- function(sumstat_data, ld_name = NULL) {
 #'
 #' @param X A matrix of genotype data where rows represent samples and columns represent genetic variants.
 #' @param Y A matrix of phenotype measurements, representing samples and columns represent conditions.
-#' @param maf A list of vectors for minor allele frequencies for each variant in X.
+#' @param maf Optional vector of minor allele frequencies for each variant in X,
+#'   used ONLY for \code{maf_cutoff} filtering and never exported. When \code{af}
+#'   is supplied the filtering MAF is derived from it (\code{min(af, 1 - af)}) and
+#'   a supplied \code{maf} is ignored (with a warning if they disagree). Default
+#'   NULL; if neither \code{maf} nor \code{af} is supplied and \code{maf_cutoff}
+#'   is set, the call errors.
+#' @param af Optional vector of directional effect-allele frequencies (frequency
+#'   of \code{a1}) aligned to the columns of X. When supplied it is exported as
+#'   the \code{top_loci$af} column; when NULL, \code{af} is \code{NA_real_}.
+#'   Default NULL.
 #' @param L Maximum number of components in mvSuSiE. Default is 30.
 #' @param L_greedy Initial greedy number of components in mvSuSiE. Default is 5.
 #' @param ld_reference_meta_file An optional path to a file containing linkage disequilibrium reference data. If provided, variants in X are filtered based on this reference.
@@ -199,7 +208,8 @@ multivariate_analysis_pipeline <- function(
     # input data
     X,
     Y,
-    maf,
+    maf = NULL,
+    af = NULL,
     X_variance = NULL,
     other_quantities = list(),
     region = NULL,
@@ -332,8 +342,29 @@ multivariate_analysis_pipeline <- function(
   if (!is.matrix(X) || !is.numeric(X)) stop("X must be a numeric matrix")
   if (!is.matrix(Y) || !is.numeric(Y)) stop("Y must be a numeric matrix")
   if (nrow(X) != nrow(Y)) stop("X and Y must have the same number of rows")
-  if (!is.numeric(maf) || length(maf) != ncol(X)) stop("maf must be a numeric vector with length equal to the number of columns in X")
-  if (any(maf < 0 | maf > 1)) stop("maf values must be between 0 and 1")
+  if (!is.null(maf)) {
+    if (!is.numeric(maf) || length(maf) != ncol(X)) stop("maf must be NULL or a numeric vector with length equal to the number of columns in X")
+    if (any(maf < 0 | maf > 1, na.rm = TRUE)) stop("maf values must be between 0 and 1")
+  }
+  if (!is.null(af)) {
+    if (!is.numeric(af) || length(af) != ncol(X)) stop("af must be NULL or a numeric vector with length equal to the number of columns in X")
+    if (any(af < 0 | af > 1, na.rm = TRUE)) stop("af values must be between 0 and 1")
+  }
+  # Single source of truth = af. When af is available, derive the filtering MAF
+  # from it (min(af, 1 - af)); a supplied directionless maf is only a fallback
+  # and, if it disagrees with the af-derived value, af wins (with a warning).
+  if (!is.null(af)) {
+    af_derived_maf <- pmin(af, 1 - af)
+    if (!is.null(maf) && any(abs(maf - af_derived_maf) > 1e-6, na.rm = TRUE)) {
+      warning("Both 'maf' and 'af' were supplied and disagree; using the ",
+              "af-derived MAF for filtering (af is the single source of truth).")
+    }
+    maf <- af_derived_maf
+  }
+  if (is.null(maf) && !is.null(maf_cutoff) && is.numeric(maf_cutoff) && maf_cutoff > 0) {
+    stop("maf_cutoff is set but neither 'af' nor 'maf' was supplied; provide ",
+         "one so MAF can be derived for filtering.")
+  }
   if (!is.numeric(L) || L <= 0) stop("L must be a positive integer")
   if (!is.null(L_greedy) && (!is.numeric(L_greedy) || L_greedy <= 0)) stop("L_greedy must be NULL or a positive integer")
   if (!is.null(L_greedy)) L_greedy <- min(L_greedy, L)
@@ -356,13 +387,15 @@ multivariate_analysis_pipeline <- function(
   if (!is.null(ld_reference_meta_file)) {
     variants_kept <- filter_variants_by_ld_reference(colnames(X), ld_reference_meta_file)
     X <- X[, variants_kept$data, drop = FALSE]
-    maf <- maf[variants_kept$idx]
+    if (!is.null(maf)) maf <- maf[variants_kept$idx]
+    if (!is.null(af)) af <- af[variants_kept$idx]
   }
 
   # filter X based on Y subjects
   if (!is.null(imiss_cutoff) || !is.null(maf_cutoff)) {
     X <- filter_X_with_Y(X, Y, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, maf = maf, X_variance = X_variance)
-    maf <- maf[colnames(X)]
+    if (!is.null(maf)) maf <- maf[colnames(X)]
+    if (!is.null(af)) af <- af[colnames(X)]
   }
 
   # filter data driven prior matrices
@@ -432,7 +465,7 @@ multivariate_analysis_pipeline <- function(
     data_y = NULL,
     X_scalar = 1,
     y_scalar = 1,
-    maf = maf,
+    af = af,
     coverage = coverage[1],
     secondary_coverage = sec_coverage,
     signal_cutoff = signal_cutoff,
