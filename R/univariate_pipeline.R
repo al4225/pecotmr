@@ -8,8 +8,13 @@
 #' @param Y A vector of phenotype measurements.
 #' @param X_scalar A scalar or vector to rescale X to its original scale.
 #' @param Y_scalar A scalar to rescale Y to its original scale.
-#' @param maf A vector of minor allele frequencies for each variant in X. Used
-#'   only for \code{maf_cutoff} filtering; never exported.
+#' @param maf Optional vector of minor allele frequencies for each variant in X,
+#'   used ONLY for \code{maf_cutoff} filtering and never exported. \code{af} is
+#'   the single source of truth: when \code{af} is supplied the filtering MAF is
+#'   derived from it (\code{min(af, 1 - af)}) and a supplied \code{maf} is
+#'   ignored (with a warning if they disagree). Default NULL; if neither
+#'   \code{maf} nor \code{af} is supplied and \code{maf_cutoff} is set, the call
+#'   errors.
 #' @param af Optional vector of directional effect-allele frequencies (frequency
 #'   of \code{a1}) aligned to the columns of X. When supplied it is exported as
 #'   the \code{top_loci$af} column; when NULL, \code{af} is \code{NA_real_}.
@@ -64,7 +69,7 @@ univariate_analysis_pipeline <- function(
     # input data
     X,
     Y,
-    maf,
+    maf = NULL,
     af = NULL,
     X_scalar = 1,
     Y_scalar = 1,
@@ -99,14 +104,33 @@ univariate_analysis_pipeline <- function(
   if (!is.matrix(X) || !is.numeric(X)) stop("X must be a numeric matrix")
   if (!is.vector(Y) && !(is.matrix(Y) && ncol(Y) == 1) || !is.numeric(Y)) stop("Y must be a numeric vector or a single column matrix")
   if (nrow(X) != length(Y)) stop("X and Y must have the same number of rows/length")
-  if (!is.numeric(maf) || length(maf) != ncol(X)) stop("maf must be a numeric vector with length equal to the number of columns in X")
-  if (any(maf < 0 | maf > 1)) stop("maf values must be between 0 and 1")
-  # af (directional effect-allele frequency) is optional. When supplied it must
-  # align with X columns; it is exported as top_loci$af. maf stays directionless
-  # and is used only for maf_cutoff filtering.
+  # maf is optional (directionless, used ONLY for maf_cutoff filtering, never
+  # exported). af (directional effect-allele frequency) is optional and is the
+  # single source of truth: when supplied it is exported as top_loci$af and the
+  # filtering MAF is derived from it.
+  if (!is.null(maf)) {
+    if (!is.numeric(maf) || length(maf) != ncol(X)) stop("maf must be NULL or a numeric vector with length equal to the number of columns in X")
+    if (any(maf < 0 | maf > 1, na.rm = TRUE)) stop("maf values must be between 0 and 1")
+  }
   if (!is.null(af)) {
     if (!is.numeric(af) || length(af) != ncol(X)) stop("af must be NULL or a numeric vector with length equal to the number of columns in X")
     if (any(af < 0 | af > 1, na.rm = TRUE)) stop("af values must be between 0 and 1")
+  }
+  # Single source of truth = af. When af is available, derive the filtering MAF
+  # from it (min(af, 1 - af)); a supplied directionless maf is only a fallback
+  # and, if it disagrees with the af-derived value, af wins (with a warning).
+  if (!is.null(af)) {
+    af_derived_maf <- pmin(af, 1 - af)
+    if (!is.null(maf) && any(abs(maf - af_derived_maf) > 1e-6, na.rm = TRUE)) {
+      warning("Both 'maf' and 'af' were supplied and disagree; using the ",
+              "af-derived MAF for filtering (af is the single source of truth).")
+    }
+    maf <- af_derived_maf
+  }
+  # If a MAF cutoff is requested, a frequency must be available to derive it.
+  if (is.null(maf) && !is.null(maf_cutoff) && is.numeric(maf_cutoff) && maf_cutoff > 0) {
+    stop("maf_cutoff is set but neither 'af' nor 'maf' was supplied; provide ",
+         "one so MAF can be derived for filtering.")
   }
   if (!is.numeric(X_scalar) || (length(X_scalar) != 1 && length(X_scalar) != ncol(X))) stop("X_scalar must be a numeric scalar or vector with length equal to the number of columns in X")
   if (!is.numeric(Y_scalar) || length(Y_scalar) != 1) stop("Y_scalar must be a numeric scalar")
@@ -165,7 +189,7 @@ univariate_analysis_pipeline <- function(
   if (!is.null(ld_reference_meta_file)) {
     variants_kept <- filter_variants_by_ld_reference(colnames(X), ld_reference_meta_file)
     X <- X[, variants_kept$data, drop = FALSE]
-    maf <- maf[variants_kept$idx]
+    if (!is.null(maf)) maf <- maf[variants_kept$idx]
     if (!is.null(af)) af <- af[variants_kept$idx]
     if (length(X_scalar) > 1) X_scalar <- X_scalar[variants_kept$idx]
   }
@@ -174,7 +198,7 @@ univariate_analysis_pipeline <- function(
   if (!is.null(imiss_cutoff) || !is.null(maf_cutoff)) {
     X_filtered <- filter_X(X, imiss_cutoff, maf_cutoff, var_thresh = xvar_cutoff, maf = maf, X_variance = X_variance)
     kept_indices <- match(colnames(X_filtered), colnames(X))
-    maf <- maf[kept_indices]
+    if (!is.null(maf)) maf <- maf[kept_indices]
     if (!is.null(af)) af <- af[kept_indices]
     if (length(X_scalar) > 1) X_scalar <- X_scalar[kept_indices]
     X <- X_filtered

@@ -2414,3 +2414,91 @@ test_that("rss: mixture LD_data (list of X panels) preserves list shape into sus
   expect_true(all(sapply(susie_X_arg, is.matrix)))
   expect_true(any(grepl("susie_rss", names(result))))
 })
+
+# ===========================================================================
+# rss-af-single-source (Step 1.2): af is the single source of truth
+# ===========================================================================
+.uap_af_xy <- function(n = 20, p = 5, seed = 7) {
+  set.seed(seed)
+  X <- matrix(rnorm(n * p), n, p)
+  colnames(X) <- paste0("chr1:", seq_len(p), ":A:G")
+  rownames(X) <- paste0("s", seq_len(n))
+  Y <- as.numeric(X[, 1] * 2 + rnorm(n))
+  names(Y) <- rownames(X)
+  list(X = X, Y = Y, p = p)
+}
+
+test_that("af supplied (no maf): MAF derived from af, af exported, no maf column", {
+  skip_if_not_installed("susieR")
+  d <- .uap_af_xy()
+  af <- runif(d$p, 0.1, 0.5)
+  res <- univariate_analysis_pipeline(X = d$X, Y = d$Y, af = af,
+    maf_cutoff = 0.01, twas_weights = FALSE, L = 5, L_greedy = 5)
+  expect_true("top_loci" %in% names(res))
+  expect_true("af" %in% colnames(res$top_loci))
+  expect_false("maf" %in% colnames(res$top_loci))
+  if (nrow(res$top_loci) > 0) expect_true(all(!is.na(res$top_loci$af)))
+})
+
+test_that("maf supplied (no af): maf used for filtering, top_loci$af is NA", {
+  skip_if_not_installed("susieR")
+  d <- .uap_af_xy()
+  maf <- runif(d$p, 0.1, 0.5)
+  res <- univariate_analysis_pipeline(X = d$X, Y = d$Y, maf = maf,
+    maf_cutoff = 0.01, twas_weights = FALSE, L = 5, L_greedy = 5)
+  expect_true("af" %in% colnames(res$top_loci))
+  if (nrow(res$top_loci) > 0) expect_true(all(is.na(res$top_loci$af)))
+})
+
+test_that("both af and maf supplied and disagreeing emits a warning (af wins)", {
+  skip_if_not_installed("susieR")
+  d <- .uap_af_xy()
+  af  <- rep(0.30, d$p)   # min(af, 1-af) = 0.30
+  maf <- rep(0.40, d$p)   # disagrees with the af-derived 0.30
+  expect_warning(
+    univariate_analysis_pipeline(X = d$X, Y = d$Y, af = af, maf = maf,
+      maf_cutoff = 0.01, twas_weights = FALSE, L = 5, L_greedy = 5),
+    "disagree"
+  )
+})
+
+test_that("neither af nor maf with maf_cutoff set errors clearly", {
+  skip_if_not_installed("susieR")
+  d <- .uap_af_xy()
+  expect_error(
+    univariate_analysis_pipeline(X = d$X, Y = d$Y,
+      maf_cutoff = 0.01, twas_weights = FALSE, L = 5, L_greedy = 5),
+    "maf_cutoff is set but neither"
+  )
+})
+
+test_that("neither af nor maf without maf_cutoff runs; top_loci$af is NA", {
+  skip_if_not_installed("susieR")
+  d <- .uap_af_xy()
+  res <- univariate_analysis_pipeline(X = d$X, Y = d$Y,
+    maf_cutoff = NULL, twas_weights = FALSE, L = 5, L_greedy = 5)
+  expect_true("top_loci" %in% names(res))
+  expect_true("af" %in% colnames(res$top_loci))
+  if (nrow(res$top_loci) > 0) expect_true(all(is.na(res$top_loci$af)))
+})
+
+test_that("af-derived MAF drives maf_cutoff filtering identically to the equivalent maf", {
+  # Behavioral test of the edit: supplying `af` must filter via min(af, 1-af),
+  # giving the SAME fit as supplying that directionless maf explicitly. Includes
+  # an af > 0.5 (variant 2) so a wrong derivation (using af directly, not the
+  # minor allele) would diverge; and a sub-cutoff variant (variant 1) so the
+  # cutoff actually removes something.
+  skip_if_not_installed("susieR")
+  d <- .uap_af_xy(p = 6)
+  af  <- c(0.005, 0.85, 0.20, 0.45, 0.15, 0.40)   # variant 1 below cutoff; variant 2 af>0.5
+  res_af  <- univariate_analysis_pipeline(X = d$X, Y = d$Y, af = af,
+    maf_cutoff = 0.01, twas_weights = FALSE, L = 5, L_greedy = 5)
+  res_maf <- univariate_analysis_pipeline(X = d$X, Y = d$Y, maf = pmin(af, 1 - af),
+    maf_cutoff = 0.01, twas_weights = FALSE, L = 5, L_greedy = 5)
+  # Identical on every column except af (res_maf's af is NA) => the af-derived
+  # MAF was used for filtering exactly like an explicit maf.
+  cols <- setdiff(names(res_af$top_loci), "af")
+  expect_equal(res_af$top_loci[cols], res_maf$top_loci[cols])
+  # And the sub-cutoff variant (chr1:1:A:G, MAF 0.005 < 0.01) was filtered out:
+  expect_false("chr1:1:A:G" %in% res_af$top_loci$variant)
+})
