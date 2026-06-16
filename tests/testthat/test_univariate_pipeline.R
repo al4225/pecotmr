@@ -1795,9 +1795,9 @@ test_that("rss: diagnostics with no CS and no high PIP => diagnostics empty", {
     diagnostics = TRUE,
     finemappingMethod = "susieRss",
     finemappingOpts = list(
-      L = 20, lGreedy = 5,
-      coverage = c(0.95, 0.7, 0.5), signalCutoff = 0.025,
-      minAbsCorr = 0.8
+      L = 20, L_greedy = 5,
+      coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025,
+      min_abs_corr = 0.8
     )
   )
 
@@ -1814,52 +1814,37 @@ test_that("rss: finemapping_opts are forwarded to susieRssPipeline", {
   ss <- make_rss_sumstats(5)
   ld_mat <- make_rss_ld_mat(5)
 
-  captured_L <- NULL
-  captured_L_greedy <- NULL
-  captured_coverage <- NULL
-  captured_signal_cutoff <- NULL
-  captured_R_mismatch <- NULL
+  cap <- NULL
   local_mocked_bindings(
     loadRssData = function(...) list(sumstats = ss, n = 1000, varY = 1),
-    rssBasicQc = function(...) QcResult(
-      ldData = if (nrow(ld_mat) > 0) .test_lddata_from_matrix(ld_mat) else NULL,
-      rssInput = list(sumstats = ss, n = NA_real_, varY = NA_real_),
-      preprocess = list(),
-      outlierNumber = 0L,
-      skipped = FALSE
-    ),
-    susieRssPipeline = function(sumstats, ldMat, n, var_y, L, lGreedy,
-                                  analysisMethod, coverage, secondaryCoverage,
-                                  signalCutoff, minAbsCorr, ...) {
-      captured_L <<- L
-      captured_L_greedy <<- lGreedy
-      captured_coverage <<- coverage
-      captured_signal_cutoff <<- signalCutoff
-      captured_R_mismatch <<- list(...)$rMismatch
-      make_fake_post_result(5)
-    },
+    summaryStatsQc = function(...) .test_qcresult(ss, ld_mat, outlierNumber = 0),
+    susieRssPipeline = function(...) { cap <<- list(...); make_fake_post_result(5) },
   )
 
-  result <- rssAnalysisPipeline(
+  suppressMessages(rssAnalysisPipeline(
     sumstatPath = "/fake/sumstats.tsv",
     columnFilePath = "/fake/columns.yml",
     ldData = make_test_ld_data(ss$variant_id),
-    zMismatchQc = NULL,
+    zMismatchQc = "none",
     impute = FALSE,
     finemappingMethod = "susieRss",
     finemappingOpts = list(
-      L = 10, lGreedy = 3,
-      coverage = c(0.90, 0.6), signalCutoff = 0.05,
-      minAbsCorr = 0.7
-    ),
-    rMismatch = "eb"
-  )
+      L = 10, L_greedy = 3,
+      coverage = c(0.90, 0.6), signal_cutoff = 0.05,
+      R_mismatch = "eb"
+    )
+  ))
 
-  expect_equal(captured_L, 10)
-  expect_equal(captured_L_greedy, 3)
-  expect_equal(captured_coverage, 0.90)
-  expect_equal(captured_signal_cutoff, 0.05)
-  expect_equal(captured_R_mismatch, "eb")
+  # coverage / signal_cutoff are consumed as separate susieRssPipeline args;
+  # the fit keys (L, L_greedy, R_mismatch) ride the finemappingOpts passthrough.
+  expect_equal(cap[["coverage"]], 0.90)
+  expect_equal(cap[["signalCutoff"]], 0.05)
+  fmo <- cap[["finemappingOpts"]]
+  expect_equal(fmo[["L"]], 10)
+  expect_equal(fmo[["L_greedy"]], 3)
+  expect_equal(fmo[["R_mismatch"]], "eb")
+  expect_false("coverage" %in% names(fmo))
+  expect_false("signal_cutoff" %in% names(fmo))
 })
 
 # ========================================================================
@@ -2015,9 +2000,9 @@ test_that("rss: diagnostics with null/empty block_cs_metrics => no additional an
     diagnostics = TRUE,
     finemappingMethod = "susieRss",
     finemappingOpts = list(
-      L = 20, lGreedy = 5,
-      coverage = c(0.95, 0.7, 0.5), signalCutoff = 0.025,
-      minAbsCorr = 0.8
+      L = 20, L_greedy = 5,
+      coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025,
+      min_abs_corr = 0.8
     )
   )
 
@@ -2559,4 +2544,33 @@ test_that("rss: mafCutoff skips with one warning when af is missing (no fallback
   # ...but it is NOT used: nothing filtered, all 5 variants kept.
   expect_equal(nrow(captured_ss), 5)
   expect_true("1:300:A:G" %in% captured_ss$variant_id)
+})
+
+# ========================================================================
+#  SECTION: rssAnalysisPipeline finemapping-defaults (rss-finemap-defaults §1.4)
+# ========================================================================
+
+test_that("rss: rssAnalysisPipeline forwards finemappingOpts as a passthrough list to susieRssPipeline", {
+  ss <- make_rss_sumstats(5)
+  ld_mat <- make_rss_ld_mat(5)
+  fake_result <- make_fake_post_result(5)
+  cap <- NULL
+  local_mocked_bindings(
+    loadRssData = function(...) list(sumstats = ss, n = 1000, var_y = 1),
+    summaryStatsQc = function(...) .test_qcresult(ss, ld_mat, outlierNumber = 0),
+    susieRssPipeline = function(...) { cap <<- list(...); fake_result },
+  )
+  suppressMessages(rssAnalysisPipeline(
+    sumstatPath = "/f.tsv", columnFilePath = "/c.yml",
+    ldData = make_test_ld_data(ss$variant_id),
+    zMismatchQc = "none", impute = FALSE, finemappingMethod = "susie_rss",
+    finemappingOpts = list(coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025, L = 12, min_abs_corr = 0.9)
+  ))
+  # coverage / signal_cutoff are consumed as separate susieRssPipeline args;
+  # the rest is forwarded as the finemappingOpts passthrough (fit + purity keys).
+  fmo <- cap[["finemappingOpts"]]
+  expect_false("coverage" %in% names(fmo))
+  expect_false("signal_cutoff" %in% names(fmo))
+  expect_equal(fmo[["L"]], 12)             # fit param rides the passthrough
+  expect_equal(fmo[["min_abs_corr"]], 0.9) # purity key isolated downstream by susieRssPipeline
 })

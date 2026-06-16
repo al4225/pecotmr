@@ -290,7 +290,7 @@ test_that("susieRssPipeline runs with bayesianConditionalRegression", {
 
   result <- susieRssPipeline(sumstats, R,
     analysisMethod = "bayesianConditionalRegression",
-    L = 5, lGreedy = 5
+    finemappingOpts = list(L = 5, L_greedy = 5)
   )
   expect_true(is.list(result))
   expect_true("finemappingResult" %in% names(result))
@@ -327,7 +327,7 @@ test_that("susieRssPipeline uses beta/se when z not provided", {
 
   result <- susieRssPipeline(sumstats, R,
     analysisMethod = "susieRss",
-    L = 5, lGreedy = 5
+    finemappingOpts = list(L = 5, L_greedy = 5)
   )
   expect_true(is.list(result))
   expect_true("finemappingResult" %in% names(result))
@@ -687,9 +687,9 @@ test_that("susieRssPipeline X-mode passes X to susieRss and computes LD from X f
     },
     formatFinemappingOutput = function(post, primaryMethod) list()
   )
-  result <- susieRssPipeline(list(z = z), xMat = X, rMismatch = "eb")
+  result <- susieRssPipeline(list(z = z), xMat = X, finemappingOpts = list(R_mismatch = "eb"))
   expect_true("X" %in% names(captured_susie_args))
-  expect_null(captured_susie_args$R)
+  expect_null(captured_susie_args[["R"]])   # exact match: $R would partial-match R_mismatch
   expect_equal(captured_susie_args$R_mismatch, "eb")
   # Post-processor receives raw X matrix (n x p), not cor(X)
   expect_equal(dim(captured_pp_data_x), c(n, p))
@@ -1301,4 +1301,88 @@ test_that("posterior_effect_mean equals colSums(alpha*mu); posterior_effect_se e
     expect_equal(unique(row$posterior_effect_se), expected_se[i],
                  tolerance = 1e-10)
   }
+})
+
+# ===========================================================================
+# rss-finemap-defaults: finemappingOpts passthrough + isolated purity (Step 3)
+# ===========================================================================
+
+.fm_fake_fit <- function(p, vnames) list(
+  pip = setNames(rep(0.01, p), vnames),
+  alpha = matrix(1 / p, nrow = 5, ncol = p),
+  lbf_variable = matrix(0, nrow = 5, ncol = p),
+  V = rep(1, 5), sets = list(cs = NULL, requestedCoverage = 0.95), niter = 10
+)
+
+test_that("finemappingOpts entries are forwarded as-is into susie_rss; empty forwards none", {
+  skip_if_not_installed("susieR")
+  p <- 5; z <- rnorm(p); vnames <- paste0("chr1:", 1:p, ":A:G"); names(z) <- vnames
+  R <- diag(p); rownames(R) <- colnames(R) <- vnames
+  cap <- NULL
+  local_mocked_bindings(
+    susie_rss = function(...) { cap <<- list(...); .fm_fake_fit(p, vnames) },
+    susie_get_cs = function(...) list(cs = NULL, requested_coverage = 0.95),
+    get_cs_correlation = function(...) NULL
+  )
+  susieRssPipeline(list(z = z, variant_id = vnames), ldMat = R,
+                   finemappingOpts = list(L = 7, R_mismatch = "eb"))
+  expect_equal(cap[["L"]], 7)
+  expect_equal(cap[["R_mismatch"]], "eb")
+  # empty finemappingOpts forwards no fit params (susie_rss defaults apply)
+  cap <- NULL
+  susieRssPipeline(list(z = z, variant_id = vnames), ldMat = R, finemappingOpts = list())
+  expect_false("L" %in% names(cap))
+  expect_false("R_finite" %in% names(cap))
+  expect_false("R_mismatch" %in% names(cap))
+})
+
+test_that("min_abs_corr / median_abs_corr are isolated to susie_get_cs, not susie_rss", {
+  skip_if_not_installed("susieR")
+  p <- 5; z <- rnorm(p); vnames <- paste0("chr1:", 1:p, ":A:G"); names(z) <- vnames
+  R <- diag(p); rownames(R) <- colnames(R) <- vnames
+  cap <- NULL; cap_cs <- NULL
+  local_mocked_bindings(
+    susie_rss = function(...) { cap <<- list(...); .fm_fake_fit(p, vnames) },
+    susie_get_cs = function(...) { cap_cs <<- list(...); list(cs = NULL, requested_coverage = 0.95) },
+    get_cs_correlation = function(...) NULL
+  )
+  susieRssPipeline(list(z = z, variant_id = vnames), ldMat = R,
+                   finemappingOpts = list(min_abs_corr = 0.9, median_abs_corr = 0.85))
+  # NOT forwarded to the fit
+  expect_false("min_abs_corr" %in% names(cap))
+  expect_false("median_abs_corr" %in% names(cap))
+  # routed to susie_get_cs
+  expect_equal(cap_cs[["min_abs_corr"]], 0.9)
+  expect_equal(cap_cs[["median_abs_corr"]], 0.85)
+})
+
+test_that("purity defaults: min_abs_corr = 0.8, median_abs_corr absent (NULL) when unset", {
+  skip_if_not_installed("susieR")
+  p <- 5; z <- rnorm(p); vnames <- paste0("chr1:", 1:p, ":A:G"); names(z) <- vnames
+  R <- diag(p); rownames(R) <- colnames(R) <- vnames
+  cap_cs <- NULL
+  local_mocked_bindings(
+    susie_rss = function(...) .fm_fake_fit(p, vnames),
+    susie_get_cs = function(...) { cap_cs <<- list(...); list(cs = NULL, requested_coverage = 0.95) },
+    get_cs_correlation = function(...) NULL
+  )
+  susieRssPipeline(list(z = z, variant_id = vnames), ldMat = R, finemappingOpts = list())
+  expect_equal(cap_cs[["min_abs_corr"]], 0.8)
+  expect_false("median_abs_corr" %in% names(cap_cs))   # omitted -> susie_get_cs default NULL
+})
+
+test_that("no L_greedy clamp: finemappingOpts L_greedy is forwarded raw, no L fabricated", {
+  skip_if_not_installed("susieR")
+  p <- 5; z <- rnorm(p); vnames <- paste0("chr1:", 1:p, ":A:G"); names(z) <- vnames
+  R <- diag(p); rownames(R) <- colnames(R) <- vnames
+  cap <- NULL
+  local_mocked_bindings(
+    susie_rss = function(...) { cap <<- list(...); .fm_fake_fit(p, vnames) },
+    susie_get_cs = function(...) list(cs = NULL, requested_coverage = 0.95),
+    get_cs_correlation = function(...) NULL
+  )
+  susieRssPipeline(list(z = z, variant_id = vnames), ldMat = R,
+                   finemappingOpts = list(L_greedy = 8))
+  expect_equal(cap[["L_greedy"]], 8)
+  expect_false("L" %in% names(cap))
 })

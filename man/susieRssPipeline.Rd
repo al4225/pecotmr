@@ -9,17 +9,13 @@ susieRssPipeline(
   ldMat = NULL,
   xMat = NULL,
   n = NULL,
-  L = 30,
-  lGreedy = 5,
   analysisMethod = c("susieRss", "singleEffect", "bayesianConditionalRegression"),
   methods = NULL,
   addSusieInf = TRUE,
   coverage = 0.95,
   secondaryCoverage = c(0.7, 0.5),
   signalCutoff = 0.1,
-  minAbsCorr = 0.8,
-  rFinite = NULL,
-  rMismatch = NULL,
+  finemappingOpts = list(),
   ...
 )
 }
@@ -31,10 +27,6 @@ susieRssPipeline(
 \item{xMat}{Genotype matrix (samples x variants). Mutually exclusive with ldMat.}
 
 \item{n}{Sample size.}
-
-\item{L}{Maximum number of causal configurations (default: 30).}
-
-\item{lGreedy}{Initial greedy number of causal configurations (default: 5).}
 
 \item{analysisMethod}{Iteration mode for the \code{"susieRss"} fit:
 \code{"susieRss"} (default, normal IBSS), \code{"singleEffect"} (L=1,
@@ -63,16 +55,15 @@ the downstream method(s) as initialisation. Default \code{TRUE}.}
 
 \item{signalCutoff}{PIP cutoff for selecting top loci (default: 0.1).}
 
-\item{minAbsCorr}{Minimum absolute correlation for CS purity (default: 0.8).}
+\item{finemappingOpts}{Free-form list of fine-mapping options forwarded as-is
+into \code{susieR::susie_rss()} (e.g. \code{L}, \code{L_greedy},
+\code{R_finite}, \code{R_mismatch}). A key supplied is passed through; a key
+omitted inherits \code{susie_rss}'s own default. Two purity keys are special:
+\code{min_abs_corr} (default \code{0.8}) and \code{median_abs_corr} (default
+\code{NULL}) are isolated from this list and routed to
+\code{susieR::susie_get_cs()} for credible-set extraction, not the fit.}
 
-\item{rFinite}{Controls variance inflation to account for estimating
-the R matrix from a finite reference panel. NULL (default): no
-variance inflation. Passed directly to susieRss.}
-
-\item{rMismatch}{LD mismatch correction method passed directly to susieRss.
-Default NULL disables mismatch correction.}
-
-\item{...}{Additional parameters passed to susieRss. Supplying
+\item{...}{Additional parameters passed to susie_rss. Supplying
 \code{var_y} here, together with \code{beta} and \code{se} columns in
 \code{sumstats}, selects the \code{bhat/shat/var_y} sufficient-statistic
 interface. Without \code{var_y}, this wrapper uses the z-score RSS

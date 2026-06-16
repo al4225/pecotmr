@@ -21,13 +21,11 @@ rssAnalysisPipeline(
   finemappingMethod = c("susieRss", "singleEffect", "bayesianConditionalRegression"),
   methods = NULL,
   addSusieInf = TRUE,
-  finemappingOpts = list(L = 20, lGreedy = 5, coverage = c(0.95, 0.7, 0.5), signalCutoff
-    = 0.025, minAbsCorr = 0.8),
+  finemappingOpts = list(L = 20, L_greedy = 5, coverage = c(0.95, 0.7, 0.5),
+    signal_cutoff = 0.025),
   impute = TRUE,
   imputeOpts = list(rcond = 0.01, r2Threshold = 0.6, minimumLd = 5, lamb = 0.01),
   pipCutoffToSkip = 0,
-  rFinite = NULL,
-  rMismatch = NULL,
   keepIndel = TRUE,
   commentString = "#",
   diagnostics = FALSE,
@@ -93,20 +91,20 @@ SuSiE-inf-RSS fit initialises the chained downstream method(s).}
 \code{"susieInfRss"} is in \code{methods} alongside
 \code{"susieRss"} and/or \code{"susieAshRss"}. Default \code{TRUE}.}
 
-\item{finemappingOpts}{List of fine-mapping options (L, lGreedy, coverage,
-signalCutoff, minAbsCorr).}
+\item{finemappingOpts}{Free-form list of fine-mapping options. \code{coverage}
+and \code{signal_cutoff} are pipeline-reporting choices kept here; everything
+else (e.g. \code{L}, \code{L_greedy}, \code{R_finite}, \code{R_mismatch}) is
+forwarded as-is into \code{susieR::susie_rss()} — supplied keys pass through,
+omitted keys inherit susieR defaults (a run with the fit params unset matches
+a manual \code{susie_rss()} call). The purity keys \code{min_abs_corr}
+(default \code{0.8}) and \code{median_abs_corr} (default \code{NULL}) are
+isolated and routed to \code{susieR::susie_get_cs()} instead of the fit.}
 
 \item{impute}{Whether to impute missing variants via RAISS (default TRUE).}
 
 \item{imputeOpts}{List of imputation options (rcond, R2_threshold, minimum_ld, lamb).}
 
 \item{pipCutoffToSkip}{PIP threshold for early stopping (default 0, no skip).}
-
-\item{rFinite}{Controls variance inflation to account for finite reference LD.
-Passed to \code{susieR::susie_rss()}.}
-
-\item{rMismatch}{LD mismatch correction method passed to \code{susieR::susie_rss()}.
-Default NULL disables mismatch correction.}
 
 \item{keepIndel}{Whether to keep indel variants (default TRUE).}
 

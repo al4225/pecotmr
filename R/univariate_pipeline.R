@@ -519,15 +519,17 @@ regionDataToSusieRssInput <- function(rssInput, ldData) {
 #' @param addSusieInf Logical controlling chained init when
 #'   \code{"susieInfRss"} is in \code{methods} alongside
 #'   \code{"susieRss"} and/or \code{"susieAshRss"}. Default \code{TRUE}.
-#' @param finemappingOpts List of fine-mapping options (L, lGreedy, coverage,
-#'   signalCutoff, minAbsCorr).
+#' @param finemappingOpts Free-form list of fine-mapping options. \code{coverage}
+#'   and \code{signal_cutoff} are pipeline-reporting choices kept here; everything
+#'   else (e.g. \code{L}, \code{L_greedy}, \code{R_finite}, \code{R_mismatch}) is
+#'   forwarded as-is into \code{susieR::susie_rss()} — supplied keys pass through,
+#'   omitted keys inherit susieR defaults (a run with the fit params unset matches
+#'   a manual \code{susie_rss()} call). The purity keys \code{min_abs_corr}
+#'   (default \code{0.8}) and \code{median_abs_corr} (default \code{NULL}) are
+#'   isolated and routed to \code{susieR::susie_get_cs()} instead of the fit.
 #' @param impute Whether to impute missing variants via RAISS (default TRUE).
 #' @param imputeOpts List of imputation options (rcond, R2_threshold, minimum_ld, lamb).
 #' @param pipCutoffToSkip PIP threshold for early stopping (default 0, no skip).
-#' @param rFinite Controls variance inflation to account for finite reference LD.
-#'   Passed to \code{susieR::susie_rss()}.
-#' @param rMismatch LD mismatch correction method passed to \code{susieR::susie_rss()}.
-#'   Default NULL disables mismatch correction.
 #' @param keepIndel Whether to keep indel variants (default TRUE).
 #' @param commentString Comment character for sumstat file (default "#").
 #' @param diagnostics Whether to include diagnostic info (default FALSE).
@@ -547,18 +549,21 @@ rssAnalysisPipeline <- function(
     methods = NULL,
     addSusieInf = TRUE,
     finemappingOpts = list(
-      L = 20, lGreedy = 5,
-      coverage = c(0.95, 0.7, 0.5), signalCutoff = 0.025,
-      minAbsCorr = 0.8
+      L = 20, L_greedy = 5,
+      coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
     ),
     impute = TRUE, imputeOpts = list(rcond = 0.01, r2Threshold = 0.6, minimumLd = 5, lamb = 0.01),
-    pipCutoffToSkip = 0, rFinite = NULL, rMismatch = NULL,
+    pipCutoffToSkip = 0,
     keepIndel = TRUE, commentString = "#", diagnostics = FALSE,
     binaryTraitModel = c("rss", "ols")) {
   binaryTraitModel <- match.arg(binaryTraitModel)
   if (!is(ldData, "LdData")) {
     stop("ldData must be an LdData object")
   }
+  # R_finite / R_mismatch are susie_rss fit options supplied via finemappingOpts;
+  # source them once here for the QC stage (which also accepts them).
+  rFinite <- finemappingOpts$R_finite %||% finemappingOpts$rFinite
+  rMismatch <- finemappingOpts$R_mismatch %||% finemappingOpts$rMismatch
   res <- list()
   rssInput <- loadRssData(
     sumstatPath = sumstatPath, columnFilePath = columnFilePath,
@@ -648,20 +653,22 @@ rssAnalysisPipeline <- function(
     priCoverage <- finemappingOpts$coverage[1]
     secCoverage <- if (length(finemappingOpts$coverage) > 1) finemappingOpts$coverage[-1] else NULL
 
-    finemappingOptsLGreedy <- finemappingOpts$lGreedy
-    finemappingOptsSignalCutoff <- finemappingOpts$signalCutoff
-    finemappingOptsMinAbsCorr <- finemappingOpts$minAbsCorr
+    finemappingOptsSignalCutoff <- finemappingOpts$signal_cutoff %||% finemappingOpts$signalCutoff %||% 0.025
+    # The fit/purity passthrough = finemappingOpts minus the pipeline-reporting keys
+    # (coverage / signal_cutoff), which susieRssPipeline takes as separate arguments.
+    # susieRssPipeline isolates min_abs_corr/median_abs_corr and forwards the rest to susie_rss.
+    finemappingOptsForFit <- finemappingOpts
+    finemappingOptsForFit$coverage <- NULL
+    finemappingOptsForFit$signal_cutoff <- NULL
+    finemappingOptsForFit$signalCutoff <- NULL
     res <- do.call(susieRssPipeline, c(susieReady, list(
-      L = finemappingOpts$L, lGreedy = finemappingOptsLGreedy,
       analysisMethod = finemappingMethod,
       methods = methods,
       addSusieInf = addSusieInf,
       coverage = priCoverage,
       secondaryCoverage = secCoverage,
       signalCutoff = finemappingOptsSignalCutoff,
-      minAbsCorr = finemappingOptsMinAbsCorr,
-      rFinite = rFinite,
-      rMismatch = rMismatch
+      finemappingOpts = finemappingOptsForFit
     )))
     if (!identical(zMismatchQc, "none") || isTRUE(alleleFlipKriging)) {
       res$outlierNumber <- qcResults$outlierNumber
@@ -686,15 +693,14 @@ rssAnalysisPipeline <- function(
       list(sumstats = sumstats, n = n, varY = varY),
       ldData
     )$susieRssInput
+    fmFit <- finemappingOpts
+    fmFit$coverage <- NULL; fmFit$signal_cutoff <- NULL; fmFit$signalCutoff <- NULL
     do.call(susieRssPipeline, c(reanalysisInput, list(
-      L = finemappingOpts$L, lGreedy = finemappingOpts$lGreedy,
       analysisMethod = method,
       coverage = priCoverage,
       secondaryCoverage = secCoverage,
       signalCutoff = finemappingOptsSignalCutoff,
-      minAbsCorr = finemappingOptsMinAbsCorr,
-      rFinite = rFinite,
-      rMismatch = rMismatch
+      finemappingOpts = fmFit
     )))
   }
 
@@ -712,7 +718,7 @@ rssAnalysisPipeline <- function(
             csNamesBvsr <- names(bvsrRes$sets$cs)
             blockCsMetrics <- extractCsInfo(conData = res, csNames = csNamesBvsr, topLociTable = res$top_loci)
         } else { # no CS
-            if (sum(bvsrRes$pip > finemappingOpts$signalCutoff) > 0) {
+            if (sum(bvsrRes$pip > finemappingOptsSignalCutoff) > 0) {
                 blockCsMetrics <- extractTopPipInfo(res)
             }
         }

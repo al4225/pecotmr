@@ -257,6 +257,7 @@ postprocessFinemappingFits <- function(fits, dataX, dataY = NULL,
                                        region = NULL,
                                        priorEffTol = 1e-9,
                                        minAbsCorr = 0.8,
+                                       medianAbsCorr = NULL,
                                        csInput = NULL) {
   fits <- fits[!vapply(fits, is.null, logical(1))]
   if (length(fits) == 0) stop("At least one fine-mapping fit must be supplied.")
@@ -276,6 +277,7 @@ postprocessFinemappingFits <- function(fits, dataX, dataY = NULL,
       signalCutoff = signalCutoff, otherQuantities = otherQuantities,
       region = region,
       priorEffTol = priorEffTol, minAbsCorr = minAbsCorr,
+      medianAbsCorr = medianAbsCorr,
       csInput = csInput
     )
   })
@@ -343,6 +345,7 @@ postprocessFinemappingFit.susiF <- function(fit, method = "fsusie", csInput = NU
                                              region = NULL,
                                              priorEffTol = 1e-9,
                                              minAbsCorr = 0.8,
+                                             medianAbsCorr = NULL,
                                              csInput = c("X", "Xcorr", "fsusie")) {
   csInput <- match.arg(csInput)
   variantNames <- extractVariantNames(fit)
@@ -351,7 +354,7 @@ postprocessFinemappingFit.susiF <- function(fit, method = "fsusie", csInput = NU
   csTables <- computeCsTables(
     fit, dataX = dataX, coverage = coverage,
     secondaryCoverage = secondaryCoverage, method = method,
-    csInput = csInput, minAbsCorr = minAbsCorr
+    csInput = csInput, minAbsCorr = minAbsCorr, medianAbsCorr = medianAbsCorr
   )
   topLoci <- buildTopLoci(
     fit, csTables, variantNames = variantNames, sumstats = sumstats,
@@ -451,7 +454,7 @@ selectEffects <- function(fit, priorEffTol = 1e-9) {
 computeCsTables <- function(fit, dataX, coverage = NULL,
                             secondaryCoverage = c(0.7, 0.5),
                             method = "susie", csInput = c("X", "Xcorr", "fsusie"),
-                            minAbsCorr = 0.8) {
+                            minAbsCorr = 0.8, medianAbsCorr = NULL) {
   csInput <- match.arg(csInput)
   primaryCoverage <- coverage
   if (is.null(primaryCoverage)) primaryCoverage <- fit$sets$requested_coverage
@@ -460,7 +463,8 @@ computeCsTables <- function(fit, dataX, coverage = NULL,
   coverages <- coverages[!is.na(coverages)]
 
   tables <- lapply(coverages, function(cov) {
-    computeCsTable(fit, dataX, coverage = cov, csInput = csInput, minAbsCorr = minAbsCorr)
+    computeCsTable(fit, dataX, coverage = cov, csInput = csInput,
+                   minAbsCorr = minAbsCorr, medianAbsCorr = medianAbsCorr)
   })
   names(tables) <- vapply(coverages, formatCsColumn, character(1), method = method)
   attr(tables, "coverage") <- coverages
@@ -468,7 +472,7 @@ computeCsTables <- function(fit, dataX, coverage = NULL,
 }
 
 computeCsTable <- function(fit, dataX, coverage, csInput = c("X", "Xcorr", "fsusie"),
-                           minAbsCorr = 0.8) {
+                           minAbsCorr = 0.8, medianAbsCorr = NULL) {
   csInput <- match.arg(csInput)
   if (csInput == "fsusie") {
     sets <- tryCatch(
@@ -489,12 +493,18 @@ computeCsTable <- function(fit, dataX, coverage, csInput = c("X", "Xcorr", "fsus
     return(list(sets = sets, cs_corr = csCorr, pip = fit$pip))
   }
 
+  # Purity thresholds for credible-set extraction. min_abs_corr / median_abs_corr
+  # are isolated from finemappingOpts upstream and routed here; pass each only
+  # when set. `fit` is passed positionally as `res`.
+  csArgs <- list(coverage = coverage)
+  if (!is.null(minAbsCorr)) csArgs$min_abs_corr <- minAbsCorr
+  if (!is.null(medianAbsCorr)) csArgs$median_abs_corr <- medianAbsCorr
   if (csInput == "X") {
-    sets <- susie_get_cs(fit, X = dataX, coverage = coverage, min_abs_corr = minAbsCorr)
+    sets <- do.call(susie_get_cs, c(list(fit), csArgs, list(X = dataX)))
     out <- list(sets = sets, pip = fit$pip)
     out$cs_corr <- get_cs_correlation(out, X = dataX)
   } else {
-    sets <- susie_get_cs(fit, Xcorr = dataX, coverage = coverage, min_abs_corr = minAbsCorr)
+    sets <- do.call(susie_get_cs, c(list(fit), csArgs, list(Xcorr = dataX)))
     out <- list(sets = sets, pip = fit$pip)
     out$cs_corr <- get_cs_correlation(out, Xcorr = dataX)
   }
@@ -937,8 +947,13 @@ adjustSusieWeights <- function(twasWeightsResults, keepVariants, runAlleleQc = T
 #' @param ldMat LD correlation matrix. Mutually exclusive with xMat.
 #' @param xMat Genotype matrix (samples x variants). Mutually exclusive with ldMat.
 #' @param n Sample size.
-#' @param L Maximum number of causal configurations (default: 30).
-#' @param lGreedy Initial greedy number of causal configurations (default: 5).
+#' @param finemappingOpts Free-form list of fine-mapping options forwarded as-is
+#'   into \code{susieR::susie_rss()} (e.g. \code{L}, \code{L_greedy},
+#'   \code{R_finite}, \code{R_mismatch}). A key supplied is passed through; a key
+#'   omitted inherits \code{susie_rss}'s own default. Two purity keys are special:
+#'   \code{min_abs_corr} (default \code{0.8}) and \code{median_abs_corr} (default
+#'   \code{NULL}) are isolated from this list and routed to
+#'   \code{susieR::susie_get_cs()} for credible-set extraction, not the fit.
 #' @param analysisMethod Iteration mode for the \code{"susieRss"} fit:
 #'   \code{"susieRss"} (default, normal IBSS), \code{"singleEffect"} (L=1,
 #'   single iteration), or \code{"bayesianConditionalRegression"}
@@ -960,13 +975,7 @@ adjustSusieWeights <- function(twasWeightsResults, keepVariants, runAlleleQc = T
 #' @param coverage Coverage level (default: 0.95).
 #' @param secondaryCoverage Secondary coverage levels (default: c(0.7, 0.5)).
 #' @param signalCutoff PIP cutoff for selecting top loci (default: 0.1).
-#' @param minAbsCorr Minimum absolute correlation for CS purity (default: 0.8).
-#' @param rFinite Controls variance inflation to account for estimating
-#'   the R matrix from a finite reference panel. NULL (default): no
-#'   variance inflation. Passed directly to susieRss.
-#' @param rMismatch LD mismatch correction method passed directly to susieRss.
-#'   Default NULL disables mismatch correction.
-#' @param ... Additional parameters passed to susieRss. Supplying
+#' @param ... Additional parameters passed to susie_rss. Supplying
 #'   \code{var_y} here, together with \code{beta} and \code{se} columns in
 #'   \code{sumstats}, selects the \code{bhat/shat/var_y} sufficient-statistic
 #'   interface. Without \code{var_y}, this wrapper uses the z-score RSS
@@ -981,19 +990,24 @@ adjustSusieWeights <- function(twasWeightsResults, keepVariants, runAlleleQc = T
 #' @importFrom dplyr arrange select
 #' @export
 susieRssPipeline <- function(sumstats, ldMat = NULL, xMat = NULL, n = NULL,
-                             L = 30, lGreedy = 5,
                              analysisMethod = c("susieRss", "singleEffect", "bayesianConditionalRegression"),
                              methods = NULL,
                              addSusieInf = TRUE,
                              coverage = 0.95,
                              secondaryCoverage = c(0.7, 0.5),
                              signalCutoff = 0.1,
-                             minAbsCorr = 0.8,
-                             rFinite = NULL, rMismatch = NULL, ...) {
+                             finemappingOpts = list(), ...) {
   analysisMethod <- match.arg(analysisMethod)
   if (is.null(ldMat) && is.null(xMat)) stop("Either ldMat or xMat must be provided.")
   if (!is.null(ldMat) && !is.null(xMat)) stop("Only one of ldMat or xMat should be provided, not both.")
-  if (!is.null(lGreedy)) lGreedy <- min(lGreedy, L)
+  # Fine-mapping options are a free-form passthrough to susie_rss. Isolate the
+  # two credible-set purity options (they act at susie_get_cs extraction, not the
+  # fit) and route them separately; everything else flows into the susie_rss call.
+  if (!is.list(finemappingOpts)) stop("finemappingOpts must be a list.")
+  minAbsCorr <- finemappingOpts$min_abs_corr %||% 0.8
+  medianAbsCorr <- finemappingOpts$median_abs_corr   # NULL when absent (susie_get_cs default)
+  finemappingOpts$min_abs_corr <- NULL
+  finemappingOpts$median_abs_corr <- NULL
 
   # Resolve effective methods. NULL => legacy single-method via analysisMethod.
   validRssMethods <- c("susieRss", "susieInfRss", "susieAshRss")
@@ -1031,10 +1045,12 @@ susieRssPipeline <- function(sumstats, ldMat = NULL, xMat = NULL, n = NULL,
     names(z) <- rownames(sumstats)
   }
 
-  dots <- list(...)
-  varY <- dots$varY
-  dots$varY <- NULL
-  if (!is.null(dots$bhat) || !is.null(dots$shat)) {
+  # Free-form passthrough to susie_rss: finemappingOpts (purity keys already
+  # isolated above) plus any extra named args. Forwarded verbatim into the fit.
+  fitOpts <- c(finemappingOpts, list(...))
+  varY <- fitOpts$varY
+  fitOpts$varY <- NULL
+  if (!is.null(fitOpts$bhat) || !is.null(fitOpts$shat)) {
     stop("Pass summary effects as 'beta' and 'se' columns in sumstats; ",
          "susieRssPipeline constructs bhat and shat internally.")
   }
@@ -1058,33 +1074,34 @@ susieRssPipeline <- function(sumstats, ldMat = NULL, xMat = NULL, n = NULL,
     shat <- sumstats$se
     names(bhat) <- names(shat) <- names(z)
     common <- c(list(bhat = bhat, shat = shat, var_y = varY, n = n,
-                     coverage = coverage, R_finite = rFinite,
-                     R_mismatch = rMismatch), dots)
+                     coverage = coverage), fitOpts)
   } else {
-    common <- c(list(z = z, n = n, coverage = coverage,
-                     R_finite = rFinite, R_mismatch = rMismatch), dots)
+    common <- c(list(z = z, n = n, coverage = coverage), fitOpts)
   }
   if (!is.null(xMat)) common$X <- xMat else common$R <- ldMat
 
+  # Method-specific overrides are applied with modifyList so they win over any
+  # passthrough key of the same name (e.g. single_effect forces L = 1) without a
+  # duplicate-argument error.
   fitOneSusieRss <- function() {
     if (analysisMethod == "singleEffect") {
-      do.call(susie_rss, c(common, list(L = 1, L_greedy = NULL, max_iter = 1)))
+      do.call(susie_rss, modifyList(common, list(L = 1, L_greedy = NULL, max_iter = 1)))
     } else if (analysisMethod == "bayesianConditionalRegression") {
-      do.call(susie_rss, c(common, list(L = L, L_greedy = lGreedy, max_iter = 1)))
+      do.call(susie_rss, modifyList(common, list(max_iter = 1)))
     } else {
-      do.call(susie_rss, c(common, list(L = L, L_greedy = lGreedy)))
+      do.call(susie_rss, common)
     }
   }
   fitOneSusieInfRss <- function() {
-    do.call(susie_rss, c(common, list(L = L, L_greedy = lGreedy,
-                                       unmappable_effects = "inf",
-                                       convergence_method = "pip",
-                                       refine = FALSE, model_init = NULL)))
+    do.call(susie_rss, modifyList(common,
+                         list(unmappable_effects = "inf",
+                              convergence_method = "pip",
+                              refine = FALSE, model_init = NULL)))
   }
   fitOneSusieAshRss <- function() {
-    do.call(susie_rss, c(common, list(L = L, L_greedy = lGreedy,
-                                       unmappable_effects = "ash",
-                                       convergence_method = "pip")))
+    do.call(susie_rss, modifyList(common,
+                         list(unmappable_effects = "ash",
+                              convergence_method = "pip")))
   }
 
   fittedModels <- list()
@@ -1097,11 +1114,11 @@ susieRssPipeline <- function(sumstats, ldMat = NULL, xMat = NULL, n = NULL,
       identical(fitMethods, "bayesianConditionalRegression")) {
     if (chainInfToSusieRss) {
       chainedArgs <- prepareSusieFromInfArgs(
-        list(L = L, L_greedy = lGreedy),
+        list(L = common$L, L_greedy = common$L_greedy),
         fittedModels[["susieInfRss"]], refineDefault = TRUE,
         unmappableEffects = "none"
       )
-      rssFit <- do.call(susie_rss, c(common, chainedArgs))
+      rssFit <- do.call(susie_rss, modifyList(common, chainedArgs))
     } else {
       rssFit <- fitOneSusieRss()
     }
@@ -1112,11 +1129,11 @@ susieRssPipeline <- function(sumstats, ldMat = NULL, xMat = NULL, n = NULL,
   if ("susieAshRss" %in% fitMethods) {
     if (chainInfToSusieAshRss) {
       chainedArgs <- prepareSusieFromInfArgs(
-        list(L = L, L_greedy = lGreedy),
+        list(L = common$L, L_greedy = common$L_greedy),
         fittedModels[["susieInfRss"]], refineDefault = NULL,
         unmappableEffects = "ash"
       )
-      ashFit <- do.call(susie_rss, c(common, chainedArgs))
+      ashFit <- do.call(susie_rss, modifyList(common, chainedArgs))
     } else {
       ashFit <- fitOneSusieAshRss()
     }
@@ -1154,6 +1171,7 @@ susieRssPipeline <- function(sumstats, ldMat = NULL, xMat = NULL, n = NULL,
     secondaryCoverage = secondaryCoverage,
     signalCutoff = signalCutoff,
     minAbsCorr = minAbsCorr,
+    medianAbsCorr = medianAbsCorr,
     csInput = ppCsInput
   )
   # Primary method preference: "susieRss" > other names > first fit
