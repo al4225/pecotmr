@@ -45,6 +45,7 @@ requirements:
     - r-colocboost
     - r-cpp11
     - r-cpp11armadillo
+    - r-ctwas
     - r-decor
     - r-dplyr
     - r-flashier
@@ -73,6 +74,7 @@ requirements:
     - r-readr
     - r-rfast
     - r-rlang
+    - r-robustbase
     - r-softimpute
     - r-stringr
     - r-susier
@@ -104,6 +106,7 @@ requirements:
     - r-colocboost
     - r-cpp11
     - r-cpp11armadillo
+    - r-ctwas
     - r-decor
     - r-dplyr
     - r-flashier
@@ -132,6 +135,7 @@ requirements:
     - r-readr
     - r-rfast
     - r-rlang
+    - r-robustbase
     - r-softimpute
     - r-stringr
     - r-susier
