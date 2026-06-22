@@ -149,8 +149,23 @@ create_allele_data <- function(seed, n=100, match_min_prop=0.8, ambiguous=FALSE,
 .ep_makeFmEntry <- function(variant_ids = paste0("chr1:", 100*(1:5), ":A:G"),
                              n_eff = 2L) {
   pip <- seq(0.9, by = -0.15, length.out = length(variant_ids))
-  tl <- data.frame(variant_id = variant_ids, pip = pip,
-                   stringsAsFactors = FALSE)
+  n <- length(variant_ids)
+  tl <- data.frame(
+    variant_id     = variant_ids,
+    chrom          = rep("1", n),
+    pos            = as.integer(100 * (1:n)),
+    A1             = rep("G", n),
+    A2             = rep("A", n),
+    N              = rep(1000, n),
+    MAF            = rep(0.1, n),
+    marginal_beta  = rep(0.1, n),
+    marginal_se    = rep(0.05, n),
+    marginal_z     = rep(2.0, n),
+    marginal_p     = rep(0.05, n),
+    pip            = pip,
+    posterior_mean = rep(0.05, n),
+    posterior_sd   = rep(0.02, n),
+    stringsAsFactors = FALSE)
   set.seed(1)
   fit <- list(
     alpha = matrix(1/length(variant_ids),
@@ -162,7 +177,7 @@ create_allele_data <- function(seed, n=100, match_min_prop=0.8, ambiguous=FALSE,
                           nrow = n_eff, ncol = length(variant_ids),
                           dimnames = list(NULL, variant_ids)))
   FineMappingEntry(variantIds = variant_ids,
-                   trimmedFit = fit,
+                   susieFit   = fit,
                    topLoci    = tl)
 }
 
@@ -640,9 +655,14 @@ test_that("enlocPipeline: qLbf NULL (QTL entry's LBF rows drop after priorTol) s
     lbf_variable = matrix(0, nrow = 1, ncol = 1, dimnames = list(NULL, "v1")),
     V = 0.0)
   e <- FineMappingEntry(variantIds = "v1",
-                        trimmedFit = emptyFit,
-                        topLoci = data.frame(variant_id = "v1", pip = 0,
-                                              stringsAsFactors = FALSE))
+                        susieFit = emptyFit,
+                        topLoci = data.frame(
+                          variant_id = "v1", chrom = "1", pos = 100L,
+                          A1 = "G", A2 = "A", N = 1000, MAF = 0.1,
+                          marginal_beta = 0.1, marginal_se = 0.05,
+                          marginal_z = 2, marginal_p = 0.05,
+                          pip = 0, posterior_mean = 0, posterior_sd = 0,
+                          stringsAsFactors = FALSE))
   qfmr <- QtlFineMappingResult(
     study   = "Q1", context = "c1", trait = "t1", method = "susie",
     entry   = list(e),
@@ -686,9 +706,14 @@ test_that("enlocPipeline: empty result schema includes enrichment + p12Used", {
   emptyFit <- list(alpha = matrix(0, 1, 1), pip = c(v1 = 0),
                    V = 0, lbf_variable = matrix(NA_real_, 1, 1))
   e <- FineMappingEntry(variantIds = "v1",
-                        trimmedFit = emptyFit,
-                        topLoci = data.frame(variant_id = "v1", pip = 0,
-                                              stringsAsFactors = FALSE))
+                        susieFit = emptyFit,
+                        topLoci = data.frame(
+                          variant_id = "v1", chrom = "1", pos = 100L,
+                          A1 = "G", A2 = "A", N = 1000, MAF = 0.1,
+                          marginal_beta = 0.1, marginal_se = 0.05,
+                          marginal_z = 2, marginal_p = 0.05,
+                          pip = 0, posterior_mean = 0, posterior_sd = 0,
+                          stringsAsFactors = FALSE))
   gfmr <- GwasFineMappingResult(
     study = "G1", method = "susie",
     entry = list(e),
@@ -771,50 +796,9 @@ test_that("computeQtlEnrichment errors when gwas_pip has no names", {
   )
 })
 
-# ---- real C++ qtlEnrichmentRcpp integration test ----
-test_that("computeQtlEnrichment calls real C++ enrichment code and returns expected keys", {
-  skip_on_covr()
-  set.seed(42)
-  n_snps <- 50
-  variantNames <- paste0("1:", 1:n_snps, ":A:G")
-
-  # GWAS PIPs: sparse signal
-  gwas_pip <- rep(0.01, n_snps)
-  gwas_pip[c(5, 20, 35)] <- c(0.8, 0.6, 0.9)
-  names(gwas_pip) <- variantNames
-
-  # SuSiE fit with 2 single effects over same variants
-  L <- 2
-  alpha <- matrix(1 / n_snps, nrow = L, ncol = n_snps)
-  # Concentrate probability on causal variants
-  alpha[1, ] <- 0.001; alpha[1, 5] <- 0.95; alpha[1, ] <- alpha[1, ] / sum(alpha[1, ])
-  alpha[2, ] <- 0.001; alpha[2, 20] <- 0.95; alpha[2, ] <- alpha[2, ] / sum(alpha[2, ])
-  pip <- colSums(alpha)
-  names(pip) <- variantNames
-
-  susie_fits <- list(
-    fit1 = list(pip = pip, alpha = alpha, prior_variance = c(0.5, 0.3))
-  )
-
-  # Call without mocking - exercises the real C++ code
-  res <- suppressWarnings(
-    computeQtlEnrichment(gwas_pip, susie_fits,
-                           numGwas = 5000, piQtl = 0.5,
-                           lambda = 1, impN = 5, numThreads = 1)
-  )
-  expect_type(res, "list")
-  # The enrichment results are in res[[1]] (the C++ output list)
-  en <- res[[1]]
-  expected_keys <- c("Intercept", "Enrichment (no shrinkage)", "Enrichment (w/ shrinkage)",
-                     "sd (no shrinkage)", "sd (w/ shrinkage)",
-                     "Alternative (coloc) p1", "Alternative (coloc) p2", "Alternative (coloc) p12")
-  for (key in expected_keys) {
-    expect_true(key %in% names(en), info = paste("Missing key:", key))
-  }
-  # All numeric and finite
-  numeric_vals <- unlist(en[expected_keys])
-  expect_true(all(is.finite(numeric_vals)))
-})
+# Real C++ kernel integration is now covered in test_qtlEnrichmentPipeline.R
+# via qtlEnrichment() (no skip_on_covr there). Don't duplicate here — this
+# file would just skip those tests anyway.
 
 # ---- unmatched variants tracking (computeQtlEnrichment.R line 102) ----
 test_that("computeQtlEnrichment tracks unmatched QTL variants", {
