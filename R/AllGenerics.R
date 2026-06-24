@@ -142,6 +142,20 @@ setGeneric("getN", function(x, ...) standardGeneric("getN"))
 #' @export
 setGeneric("getMaf", function(x, ...) standardGeneric("getMaf"))
 
+#' @title Get Effect-Allele Frequencies
+#' @description Extract the directional effect-allele (A1) frequency vector
+#'   for a \code{QtlDataset}. Unlike \code{\link{getMaf}}, the value is
+#'   \emph{not} folded to the minor allele: it is the frequency of the
+#'   dosage-counted allele (A1, the effect allele), matching the allele the
+#'   marginal effect sizes and the fine-mapping \code{af} column report.
+#' @param x A \code{QtlDataset} object.
+#' @param ... Class-specific selection arguments (e.g., \code{traitId},
+#'   \code{region}, \code{cisWindow}, \code{samples} for \code{QtlDataset}).
+#' @return Named numeric vector of effect-allele frequencies (names are
+#'   variant IDs), or an empty vector when no variants are selected.
+#' @export
+setGeneric("getAf", function(x, ...) standardGeneric("getAf"))
+
 #' @title Get Number of SNPs
 #' @description Number of SNPs in a \code{GwasSumStats} or
 #'   \code{QtlSumStats} entry, selected by its identity tuple.
@@ -396,6 +410,21 @@ setGeneric("getPip", function(x, ...) standardGeneric("getPip"))
 #' @return A list (the SuSiE fit object).
 #' @export
 setGeneric("getSusieFit", function(x, ...) standardGeneric("getSusieFit"))
+
+#' @title Get Cross-Validation Result
+#' @description Extract the cross-validation payload stored on a
+#'   \code{FineMappingEntry} (or the matching entry of a
+#'   \code{FineMappingResult}). The payload is a list with components
+#'   \code{samplePartition} (a \code{data.frame} of \code{Sample}/\code{Fold}
+#'   assignments), \code{predictions} (a named list of per-method out-of-fold
+#'   prediction matrices), and \code{performance} (a named list of per-method
+#'   metric matrices). \code{NULL} when fine-mapping was run without
+#'   cross-validation (\code{cvFolds <= 1}).
+#' @param x A \code{FineMappingEntry} or \code{FineMappingResult}.
+#' @param ... Class-specific selection arguments.
+#' @return A list (the CV payload) or \code{NULL}.
+#' @export
+setGeneric("getCvResult", function(x, ...) standardGeneric("getCvResult"))
 
 #' @title Get Marginal Effects
 #' @description Extract per-variant marginal univariate effects from a

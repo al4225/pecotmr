@@ -546,6 +546,38 @@ test_that(".qtlExtractBlock: keepVariants with empty intersection returns empty 
   expect_equal(nrow(blk$geno), 0L)
 })
 
+test_that(".qtlExtractBlock: keepIndel = FALSE drops multi-base (indel) variants", {
+  qd <- .qh_makeDataset()
+  # Make rs2 (insertion) and rs4 (deletion) indels; the rest stay SNPs.
+  qd@genotypes@snpInfo$A1[2] <- "AT"
+  qd@genotypes@snpInfo$A2[4] <- "GC"
+  qd@keepIndel <- FALSE
+  local_mocked_bindings(
+    extractBlockGenotypes = .qh_mockExtractor(),
+    .package = "pecotmr")
+  blk <- pecotmr:::.qtlExtractBlock(qd)
+  expect_equal(blk$variantIds, c("rs1", "rs3", "rs5", "rs6"))
+})
+
+test_that(".qtlExtractBlock: keepIndel = TRUE (default) keeps indel variants", {
+  qd <- .qh_makeDataset()
+  qd@genotypes@snpInfo$A1[2] <- "AT"
+  expect_true(qd@keepIndel)  # default
+  local_mocked_bindings(
+    extractBlockGenotypes = .qh_mockExtractor(),
+    .package = "pecotmr")
+  blk <- pecotmr:::.qtlExtractBlock(qd)
+  expect_equal(length(blk$variantIds), 6L)
+})
+
+test_that("QtlDataset: keepIndel defaults to TRUE; validity rejects non-scalar", {
+  qd <- .qh_makeDataset()
+  expect_true(qd@keepIndel)
+  # The constructor coerces via isTRUE(); validity guards direct new()/slot sets.
+  qd@keepIndel <- c(TRUE, FALSE)
+  expect_error(validObject(qd), "keepIndel.*single logical")
+})
+
 test_that(".qtlExtractBlock: mafCutoff drops low-MAF variants", {
   qd <- .qh_makeDataset()
   # The mocked extractor returns binomial(0.3) dosages: realized MAFs hover
@@ -568,6 +600,70 @@ test_that(".qtlExtractBlock: mafCutoff retains variants above the threshold", {
   blk <- pecotmr:::.qtlExtractBlock(qd)
   expect_true(ncol(blk$geno) >= 1L)
   expect_true(all(blk$maf >= 0.4))
+})
+
+# Deterministic dosage panel so the directional (un-folded) effect-allele
+# frequency is exactly known: rs1 = 0.70, rs2 = 0.20, rs3 = 0.50, rest 0.
+.qh_directionalExtractor <- function() {
+  function(handle, snpIdx, meanImpute = TRUE) {
+    panel <- matrix(0, nrow = length(handle@sampleIds),
+                    ncol = nrow(handle@snpInfo),
+                    dimnames = list(handle@sampleIds, handle@snpInfo$SNP))
+    panel[, "rs1"] <- c(2, 2, 2, 2, 1, 1, 1, 1, 1, 1)  # sum 14 -> p = 0.70
+    panel[, "rs2"] <- c(1, 1, 1, 1, 0, 0, 0, 0, 0, 0)  # sum  4 -> p = 0.20
+    panel[, "rs3"] <- 1                                 # sum 10 -> p = 0.50
+    sub <- panel[, snpIdx, drop = FALSE]
+    rr <- GenomicRanges::GRanges(
+      seqnames = paste0("chr", handle@snpInfo$CHR[snpIdx]),
+      ranges = IRanges::IRanges(start = handle@snpInfo$BP[snpIdx], width = 1L))
+    S4Vectors::mcols(rr) <- S4Vectors::DataFrame(
+      SNP = handle@snpInfo$SNP[snpIdx], A1 = handle@snpInfo$A1[snpIdx],
+      A2 = handle@snpInfo$A2[snpIdx])
+    dosage <- t(sub)
+    rownames(dosage) <- handle@snpInfo$SNP[snpIdx]
+    colnames(dosage) <- handle@sampleIds
+    SummarizedExperiment::SummarizedExperiment(
+      assays    = list(dosage = dosage),
+      rowRanges = rr,
+      colData   = S4Vectors::DataFrame(sampleId = handle@sampleIds,
+                                       row.names = handle@sampleIds))
+  }
+}
+
+test_that(".qtlExtractBlock: returns directional af; maf is its minor-allele fold", {
+  qd <- .qh_makeDataset()
+  local_mocked_bindings(
+    extractBlockGenotypes = .qh_mockExtractor(),
+    .package = "pecotmr")
+  blk <- pecotmr:::.qtlExtractBlock(qd)
+  expect_equal(length(blk$af), length(blk$variantIds))
+  # `maf` is exactly the minor-allele fold of the directional `af`.
+  expect_equal(unname(blk$maf), pmin(unname(blk$af), 1 - unname(blk$af)))
+})
+
+test_that("getAf: returns directional effect-allele frequency (not folded to MAF)", {
+  qd <- .qh_makeDataset(n_samples = 10L)
+  local_mocked_bindings(
+    extractBlockGenotypes = .qh_directionalExtractor(),
+    .package = "pecotmr")
+  af <- getAf(qd)
+  expect_named(af)
+  # Directional: 0.70 / 0.20 retained verbatim, NOT folded to 0.30 / 0.20.
+  expect_equal(unname(af[["rs1"]]), 0.70)
+  expect_equal(unname(af[["rs2"]]), 0.20)
+  expect_equal(unname(af[["rs3"]]), 0.50)
+})
+
+test_that("getMaf stays folded while getAf is directional (they fold into each other)", {
+  qd <- .qh_makeDataset(n_samples = 10L)
+  local_mocked_bindings(
+    extractBlockGenotypes = .qh_directionalExtractor(),
+    .package = "pecotmr")
+  af  <- getAf(qd)
+  maf <- getMaf(qd)
+  # getMaf folds rs1's 0.70 down to 0.30; getAf does not.
+  expect_equal(unname(maf[["rs1"]]), 0.30)
+  expect_equal(unname(maf[names(af)]), pmin(unname(af), 1 - unname(af)))
 })
 
 

@@ -27,6 +27,10 @@ fineMappingPipeline(data, ...)
   minAbsCorr = 0.8,
   medianAbsCorr = NULL,
   fineMappingResult = NULL,
+  cvFolds = 0,
+  samplePartition = NULL,
+  pipCutoffToSkip = 0,
+  seed = NULL,
   naAction = c("drop", "impute"),
   verbose = 1,
   trim = TRUE,
@@ -53,6 +57,10 @@ fineMappingPipeline(data, ...)
   minAbsCorr = 0.8,
   medianAbsCorr = NULL,
   fineMappingResult = NULL,
+  cvFolds = 0,
+  samplePartition = NULL,
+  pipCutoffToSkip = 0,
+  seed = NULL,
   naAction = c("drop", "impute"),
   verbose = 1,
   trim = TRUE,
@@ -178,6 +186,34 @@ kept if it passes either \code{minAbsCorr} or \code{medianAbsCorr}
 
 \item{fineMappingResult}{Optional existing \code{FineMappingResult}
 to use as a resume cache; tuples already present are not refit.}
+
+\item{cvFolds}{Integer. Number of cross-validation folds. Default
+\code{0} (no CV). When \code{> 1}, each method is refit on the
+training samples of every fold and used to predict the held-out
+samples; the fold partition plus per-fold out-of-fold predictions and
+metrics are stored on each \code{FineMappingEntry}'s \code{cvResult}
+slot (see \code{\link{getCvResult}}). \code{twasWeightsPipeline} reuses
+this partition and feeds these predictions into the SR-TWAS ensemble.
+Individual-level (\code{QtlDataset} / \code{MultiStudyQtlDataset})
+input only; ignored for sumstat inputs.}
+
+\item{samplePartition}{Optional pre-defined CV partition
+\code{data.frame} with columns \code{Sample} and \code{Fold}. When
+supplied (and \code{cvFolds > 1}), every method reuses this exact
+partition; otherwise a fresh partition is generated per
+\code{(study, context, trait)}.}
+
+\item{pipCutoffToSkip}{Numeric (length 1). Individual-level single-effect
+(SER) pre-screen applied to each residualized \code{(X, y)} block before a
+full fit: a susie model with \code{L = 1} is fit and the block is skipped
+when no PIP exceeds the cutoff (no potentially significant variant). The
+summary-statistics analog lives in \code{summaryStatsQc()}. \code{0}
+(default) disables the screen; a negative value uses the adaptive
+\code{3 / nVariants} threshold.}
+
+\item{seed}{Optional integer. When non-NULL, \code{set.seed(seed)} is
+called once at the start of the call for reproducible fits. Default
+\code{NULL} (no seeding).}
 
 \item{verbose}{Verbosity (0 silent, 1 default). Default \code{1}.}
 
@@ -319,9 +355,6 @@ deliberately not ported here:
         level QC lives on the \code{QtlDataset} constructor; sumstat
         QC lives in \code{summaryStatsQc()}. No filtering happens
         inside this pipeline.
-  \item \code{pipCutoffToSkip} pre-screen: this lived in the old
-        pipelines but is not ported. Callers can run a one-shot
-        \code{susieR::susie} check externally if needed.
   \item Diagnostic re-analysis paths
         (\code{singleEffect} / \code{bayesianConditionalRegression}
         reanalysis on the RSS path): these are not exposed as

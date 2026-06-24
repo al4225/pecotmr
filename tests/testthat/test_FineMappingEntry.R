@@ -171,6 +171,22 @@ test_that("FineMappingEntry: getCs filters to rows in any credible set", {
 })
 
 
+test_that("FineMappingEntry: getCs/getTopLoci surface the directional af column", {
+  # Regression: the posterior view must carry the topLoci `af` (effect-allele
+  # frequency) through to getCs() / getTopLoci(), not drop it to NA. The
+  # value is directional (0.87 > 0.5), so a folded MAF would be a bug.
+  entry <- .sc_makeFineMappingEntry(3)
+  cs <- getCs(entry)
+  expect_true("af" %in% names(cs))
+  expect_equal(unname(cs$af), rep(0.87, nrow(cs)))
+  expect_false(anyNA(cs$af))
+
+  tl <- getTopLoci(entry, signalCutoff = 0)
+  expect_true("af" %in% names(tl))
+  expect_equal(unname(tl$af), rep(0.87, nrow(tl)))
+})
+
+
 test_that("FineMappingEntry: validity errors when topLoci is missing required cols", {
   expect_error(
     FineMappingEntry(
@@ -179,6 +195,30 @@ test_that("FineMappingEntry: validity errors when topLoci is missing required co
       topLoci    = data.frame(other = 1, stringsAsFactors = FALSE)),
     "topLoci missing required columns"
   )
+})
+
+
+# === cvResult slot (cross-validation payload) ===
+
+test_that("FineMappingEntry stores and returns a cvResult payload", {
+  tl <- data.frame(variant_id = c("v1", "v2"), pip = c(0.8, 0.2),
+                   stringsAsFactors = FALSE)
+  cv <- list(samplePartition = data.frame(Sample = c("s1", "s2"), Fold = c(1L, 2L)),
+             prediction = list(susie_predicted = matrix(0, 2, 1)),
+             performance = list(susie_performance = matrix(0, 1, 6)))
+  e <- FineMappingEntry(variantIds = tl$variant_id, susieFit = list(),
+                        topLoci = tl, cvResult = cv)
+  expect_identical(getCvResult(e), cv)
+})
+
+test_that("FineMappingEntry cvResult defaults to NULL and rejects non-list", {
+  tl <- data.frame(variant_id = "v1", pip = 0.5, stringsAsFactors = FALSE)
+  e <- FineMappingEntry(variantIds = "v1", susieFit = list(), topLoci = tl)
+  expect_null(getCvResult(e))
+  expect_error(
+    FineMappingEntry(variantIds = "v1", susieFit = list(), topLoci = tl,
+                     cvResult = 1:3),
+    "cvResult must be NULL or a list")
 })
 
 # ===========================================================================
