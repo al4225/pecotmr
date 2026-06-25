@@ -239,7 +239,7 @@ assembleCtwasInputs <- function(gwasSumStats, twasWeights,
     ldFileByRegion[[rid]] <- ldKey
 
     zSnpPieces[[rid]]       <- .ctwasBuildZSnp(gss)
-    regionInfoPieces[[rid]] <- .ctwasBuildSingleRegionInfo(rid, gwasLd)
+    regionInfoPieces[[rid]] <- .ctwasBuildSingleRegionInfo(rid, gss)
     snpMap[[rid]] <- .ctwasSnpInfoForGwasBlock(gss, ldPanel$snpInfo)
   }
 
@@ -312,11 +312,15 @@ assembleCtwasInputs <- function(gwasSumStats, twasWeights,
 #' @param groupPriorVarStructure Pass-through.
 #' @param ncore Number of cores.
 #' @param fallbackToPrefit Logical (length 1). When \code{TRUE} (default
-#'   \code{FALSE}), if \code{ctwas::est_param}'s accurate EM diverges to
-#'   NaN and throws \code{"Estimated group_prior(_var)? contains NAs"},
-#'   re-run only the prefit step via \code{ctwas:::fit_EM} and return
-#'   those (typically finite) priors as the param. Mirrors the legacy
-#'   ctwas_2 workaround on toy data where the accurate EM saturates.
+#'   \code{FALSE}), if \code{ctwas::est_param}'s accurate EM fails for ANY
+#'   reason on a degenerate input, re-run only the prefit step via
+#'   \code{ctwas:::fit_EM} and return those (typically finite) priors as the
+#'   param. The accurate-EM failure mode is version-dependent (ctwas <= 0.4.x:
+#'   \code{"contains NAs"}; ctwas >= 0.6.0: \code{"No regions selected!"} or a
+#'   NaN-loglik \code{"missing value where TRUE/FALSE needed"}), so the catch is
+#'   deliberately broad; a genuinely broken input still surfaces because the
+#'   prefit re-run will itself error. Mirrors the legacy ctwas_2 workaround on
+#'   toy data where the accurate EM cannot be estimated.
 #' @param ... Additional arguments forwarded to \code{ctwas::est_param}
 #'   (e.g. \code{min_p_single_effect}, \code{min_group_size}).
 #' @return The \code{inputs} list augmented with \code{region_data},
@@ -376,8 +380,17 @@ estCtwasParam <- function(inputs,
       group_prior_var_structure = groupPriorVarStructure,
       ncore                     = as.integer(ncore)), extra = list(...)),
     error = function(e) {
-      if (fallbackToPrefit && grepl("contains NAs", conditionMessage(e))) {
-        message("estCtwasParam: accurate EM diverged (",
+      # The accurate EM fails on degenerate (e.g. single-gene) inputs in
+      # several version-dependent ways: ctwas <= 0.4.x throws "contains NAs";
+      # ctwas >= 0.6.0 throws "No regions selected!" (zero regions clear the
+      # accurate pass) or "missing value where TRUE/FALSE needed" (NaN
+      # log-likelihood in the EM convergence test). Rather than enumerate
+      # brittle, version-specific messages, fall back on ANY accurate-EM error
+      # when fallbackToPrefit is set: re-run the prefit EM only, which scores
+      # every region and skips the p(single effect) selection gate. A genuinely
+      # broken input still surfaces, because the prefit re-run will itself error.
+      if (fallbackToPrefit) {
+        message("estCtwasParam: accurate EM unusable (",
                 conditionMessage(e), "); falling back to prefit estimates.")
         .ctwasFitPrefitEm(regionData,
                           niterPrefit            = as.integer(niterPrefit),
@@ -504,7 +517,116 @@ finemapCtwasRegions <- function(screenResult,
     susie_alpha_res = fmRes$susie_alpha_res,
     region_data     = screenResult$region_data,
     boundary_genes  = screenResult$boundary_genes,
-    screen_res      = screenResult$screen_res)
+    screen_res      = screenResult$screen_res,
+    # Carried forward so mergeCtwasBoundaryRegions() can re-finemap the merged
+    # boundary regions without re-deriving the assembled inputs.
+    region_info        = screenResult$region_info,
+    z_snp              = screenResult$z_snp,
+    weights            = screenResult$weights,
+    snp_map            = screenResult$snp_map,
+    LD_map             = screenResult$LD_map,
+    LD_loader_fun      = screenResult$LD_loader_fun,
+    snpinfo_loader_fun = screenResult$snpinfo_loader_fun)
+}
+
+#' Merge boundary cTWAS regions and re-fine-map
+#'
+#' @description Optional step 4 of the cTWAS pipeline (default-off region
+#'   merging). A gene whose cis window straddles an LD-block boundary
+#'   (a \code{boundary_genes} member) is split across two regions in the
+#'   first-pass fine-mapping. This step selects the high-PIP boundary genes,
+#'   merges each one's adjacent regions into a single region, re-runs
+#'   fine-mapping on the merged regions, and splices the updated results back
+#'   into the \code{\link{finemapCtwasRegions}} output. Thin wrapper over
+#'   \code{ctwas::postprocess_region_merging()} (or
+#'   \code{ctwas::postprocess_region_merging_noLD()} when the inputs carry no
+#'   LD loaders).
+#'
+#' @param finemapResult A list returned by \code{\link{finemapCtwasRegions}}.
+#'   Must carry \code{finemap_res}, \code{susie_alpha_res},
+#'   \code{region_data}, \code{region_info}, \code{z_snp}, \code{z_gene},
+#'   \code{weights}, \code{snp_map}, \code{param}, and — on the LD path —
+#'   \code{LD_map} plus the \code{LD_loader_fun} / \code{snpinfo_loader_fun}
+#'   closures (all retained by \code{finemapCtwasRegions}).
+#' @param pipThresh Numeric (length 1). PIP threshold for selecting which
+#'   boundary genes to merge (\code{select_boundary_genes} \code{pip_thresh}).
+#'   Default \code{0.5}.
+#' @param filterCs Logical (length 1). Require the gene to be in a credible set
+#'   to be selected (\code{select_boundary_genes} \code{filter_cs}). Default
+#'   \code{FALSE}.
+#' @param maxSNP Numeric (length 1). Per-merged-region SNP cap. Default
+#'   \code{Inf}.
+#' @param L Integer. Max number of single effects for the merged-region
+#'   re-fine-mapping (LD path only). Default \code{5}.
+#' @param ncore Number of cores. Default \code{1}.
+#' @param ... Forwarded to the underlying ctwas postprocess function.
+#' @return The \code{finemapResult} list with \code{finemap_res},
+#'   \code{susie_alpha_res}, \code{region_data}, \code{region_info},
+#'   \code{LD_map}, and \code{snp_map} replaced by the post-merge ("updated")
+#'   values, plus a \code{merge_res} element carrying the full ctwas postprocess
+#'   output. When no boundary gene clears \code{pipThresh}, ctwas returns the
+#'   inputs as the "updated" values, so the result is effectively unchanged.
+#' @export
+mergeCtwasBoundaryRegions <- function(finemapResult,
+                                      pipThresh = 0.5,
+                                      filterCs  = FALSE,
+                                      maxSNP    = Inf,
+                                      L         = 5L,
+                                      ncore     = 1L,
+                                      ...) {
+  if (!requireNamespace("ctwas", quietly = TRUE))
+    stop("Package 'ctwas' is required for mergeCtwasBoundaryRegions.")
+  fmRes <- finemapResult$finemap_res
+  if (is.null(fmRes) || nrow(fmRes) == 0L) {
+    message("mergeCtwasBoundaryRegions: no first-pass finemap result; ",
+            "returning unchanged.")
+    return(finemapResult)
+  }
+
+  hasLd <- !is.null(finemapResult$LD_loader_fun)
+  common <- list(
+    region_info     = finemapResult$region_info,
+    region_data     = finemapResult$region_data,
+    z_snp           = finemapResult$z_snp,
+    z_gene          = finemapResult$z_gene,
+    weights         = finemapResult$weights,
+    snp_map         = finemapResult$snp_map,
+    finemap_res     = fmRes,
+    susie_alpha_res = finemapResult$susie_alpha_res,
+    group_prior     = finemapResult$param$group_prior,
+    group_prior_var = finemapResult$param$group_prior_var,
+    pip_thresh      = pipThresh,
+    filter_cs       = filterCs,
+    maxSNP          = maxSNP,
+    ncore           = as.integer(ncore))
+
+  # ctwas's postprocess_*() forward `...` into finemap_regions, so the LD
+  # loader closures must ride in the explicit arg list (not through
+  # .ctwasInvoke, which would filter them to postprocess's own formals).
+  if (hasLd) {
+    fn   <- ctwas::postprocess_region_merging
+    args <- c(common, list(
+      LD_map             = finemapResult$LD_map,
+      L                  = as.integer(L),
+      LD_format          = "custom",
+      LD_loader_fun      = finemapResult$LD_loader_fun,
+      snpinfo_loader_fun = finemapResult$snpinfo_loader_fun))
+  } else {
+    fn   <- ctwas::postprocess_region_merging_noLD
+    args <- common
+  }
+  userExtra <- list(...)
+  userExtra <- userExtra[setdiff(names(userExtra), names(args))]
+  res <- do.call(fn, c(args, userExtra))
+
+  finemapResult$finemap_res     <- res$updated_finemap_res
+  finemapResult$susie_alpha_res <- res$updated_susie_alpha_res
+  if (!is.null(res$updated_region_data)) finemapResult$region_data <- res$updated_region_data
+  if (!is.null(res$updated_region_info)) finemapResult$region_info <- res$updated_region_info
+  if (!is.null(res$updated_LD_map))      finemapResult$LD_map      <- res$updated_LD_map
+  if (!is.null(res$updated_snp_map))     finemapResult$snp_map     <- res$updated_snp_map
+  finemapResult$merge_res <- res
+  finemapResult
 }
 
 # Invoke a ctwas function with a fixed `args` list plus optional `extra`
@@ -665,19 +787,32 @@ finemapCtwasRegions <- function(screenResult,
 # (min/max BP per chromosome). The sketch is assumed to cover exactly
 # one block.
 # @noRd
-.ctwasBuildSingleRegionInfo <- function(regionId, gwasLd) {
-  snpInfo <- getSnpInfo(gwasLd)
-  chr <- unique(as.integer(sub("^chr", "", as.character(snpInfo$CHR),
-                                ignore.case = TRUE)))
+.ctwasBuildSingleRegionInfo <- function(regionId, gss) {
+  # Derive the block's [start, stop] from the GWAS variants actually in this
+  # block (the GwasSumStats entry GRanges) — NOT the LD sketch. When many
+  # blocks share one whole-chromosome LD payload (the common one-file-per-chr
+  # layout), getSnpInfo(ldSketch) spans the entire chromosome, so every region
+  # would collapse to the same whole-chromosome [start, stop] and every SNP
+  # would be assigned to every region (inflating SNP group_size N-fold and
+  # diluting the gene prior to ~0).
+  pos <- integer(0); chrs <- character(0)
+  for (i in seq_len(nrow(gss))) {
+    gr   <- gss$entry[[i]]
+    pos  <- c(pos, as.integer(GenomicRanges::start(gr)))
+    chrs <- c(chrs, as.character(GenomicRanges::seqnames(gr)))
+  }
+  chr <- unique(as.integer(sub("^chr", "", chrs, ignore.case = TRUE)))
   if (length(chr) != 1L)
-    stop("ctwasPipeline: gwasSumStats LD sketch spans multiple ",
-         "chromosomes (", paste(chr, collapse = ", "),
-         "). ctwasPipeline assumes a single LD block per call.")
+    stop("ctwasPipeline: GwasSumStats block '", regionId, "' spans multiple ",
+         "chromosomes (", paste(chr, collapse = ", "), ").")
+  if (length(pos) == 0L)
+    stop("ctwasPipeline: GwasSumStats block '", regionId,
+         "' has no variants to define region bounds.")
   data.frame(
     region_id = regionId,
     chrom     = chr,
-    start     = min(as.integer(snpInfo$BP)),
-    stop      = max(as.integer(snpInfo$BP)),
+    start     = min(pos),
+    stop      = max(pos),
     stringsAsFactors = FALSE)
 }
 
